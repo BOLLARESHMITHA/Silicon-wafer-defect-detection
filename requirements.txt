@@ -1,11 +1,13 @@
 streamlit==1.35.0
 
-# Compatible Torch (IMPORTANT FIX)
+# Torch (already fixed)
 torch==2.9.0
 torchvision==0.24.0
 
+# FIX THIS ↓ (VERY IMPORTANT)
+Pillow>=11.0.0
+
 opencv-python-headless==4.10.0.82
-Pillow==10.3.0
 
 numpy==1.26.4
 pandas==2.2.2
