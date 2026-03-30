@@ -575,7 +575,8 @@ def _jet_colormap(g):
     return (np.stack([r, g2, b], -1) * 255).astype(np.uint8)
 
 def make_heatmap(img_pil: Image.Image, size: int = 64) -> np.ndarray:
-    """Activation heatmap — pure numpy + PIL, no external deps."""    gray = np.array(img_pil.convert('L').resize((size, size), Image.NEAREST), dtype=np.float32)
+    """Activation heatmap — pure numpy + PIL, no external deps."""
+    gray = np.array(img_pil.convert('L').resize((size, size), Image.NEAREST), dtype=np.float32)
     mn, mx = gray.min(), gray.max()
     norm    = (gray - mn) / ((mx - mn) + 1e-6)
     heat    = _conv2d_np(norm, _gauss2d())
