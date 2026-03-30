@@ -492,7 +492,7 @@ def load_class_names():
     return CLASS_NAMES
 
 
-@st.cache_resource(show_spinner=False)
+
 def _detect_hybrid_config(sd):
     """Infer exact HybridCNNTransformer config from weight tensor shapes."""
     d_model      = sd['pos_embed'].shape[2]
