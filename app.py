@@ -339,32 +339,42 @@ class WaferCNN(nn.Module):
 
 class HybridCNNTransformer(nn.Module):
     def __init__(self, num_classes=9, img_size=64, d_model=128, nhead=4,
-                 num_layers=2, dropout=0.3):
+                 num_layers=2, dropout=0.3, deep_backbone=False):
         super().__init__()
-        self.cnn_backbone = nn.Sequential(
-            nn.Conv2d(3, 32, 3, padding=1),  nn.BatchNorm2d(32),  nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64),  nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(64, d_model, 3, padding=1), nn.BatchNorm2d(d_model), nn.ReLU(),
-        )
+        if deep_backbone:
+            self.cnn_backbone = nn.Sequential(
+                nn.Conv2d(3,64,3,padding=1),    nn.BatchNorm2d(64),    nn.ReLU(),
+                nn.Conv2d(64,64,3,padding=1),   nn.BatchNorm2d(64),    nn.ReLU(),
+                nn.MaxPool2d(2),
+                nn.Conv2d(64,128,3,padding=1),  nn.BatchNorm2d(128),   nn.ReLU(),
+                nn.Conv2d(128,128,3,padding=1), nn.BatchNorm2d(128),   nn.ReLU(),
+                nn.MaxPool2d(2),
+                nn.Conv2d(128,d_model,3,padding=1), nn.BatchNorm2d(d_model), nn.ReLU(),
+            )
+        else:
+            self.cnn_backbone = nn.Sequential(
+                nn.Conv2d(3, 32, 3, padding=1),  nn.BatchNorm2d(32),  nn.ReLU(), nn.MaxPool2d(2),
+                nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64),  nn.ReLU(), nn.MaxPool2d(2),
+                nn.Conv2d(64, d_model, 3, padding=1), nn.BatchNorm2d(d_model), nn.ReLU(),
+            )
         with torch.no_grad():
-            dummy = torch.zeros(1, 3, img_size, img_size)
-            feat  = self.cnn_backbone(dummy)
+            feat    = self.cnn_backbone(torch.zeros(1, 3, img_size, img_size))
             seq_len = feat.shape[2] * feat.shape[3]
         self.pos_embed = nn.Parameter(torch.zeros(1, seq_len, d_model))
-        nn.init.trunc_normal_(self.pos_embed, std=0.02)
         enc = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=nhead, dim_feedforward=d_model*4,
             dropout=dropout, batch_first=True)
         self.transformer = nn.TransformerEncoder(enc, num_layers=num_layers)
         self.head = nn.Sequential(
             nn.LayerNorm(d_model),
-            nn.Linear(d_model,256), nn.GELU(), nn.Dropout(dropout),
-            nn.Linear(256,num_classes),
+            nn.Linear(d_model, 256), nn.GELU(), nn.Dropout(dropout),
+            nn.Linear(256, num_classes),
         )
+
     def forward(self, x):
         feat = self.cnn_backbone(x)
-        B,C,H,W = feat.shape
-        feat = feat.flatten(2).transpose(1,2)
+        B, C, H, W = feat.shape
+        feat = feat.flatten(2).transpose(1, 2)
         feat = feat + self.pos_embed[:, :feat.size(1), :]
         feat = self.transformer(feat)
         return self.head(feat.mean(dim=1))
@@ -476,30 +486,46 @@ CLASS_COLORS = {
 
 def load_class_names():
     """Load class names from saved .npy or fall back to default."""
-    for path in ['wafer_imgs/class_names.npy', 'models/class_names.npy', 'class_names.npy']:
+    for path in ['class_names.npy', 'wafer_imgs/class_names.npy']:
         if os.path.exists(path):
             return list(np.load(path, allow_pickle=True))
     return CLASS_NAMES
 
 
 @st.cache_resource(show_spinner=False)
-def load_model(model_name: str, num_classes: int):
-    """Load model weights — cached so it only runs once."""
-    model_map = {
-        'Hybrid CNN-Transformer': (HybridCNNTransformer, 'best_hybrid.pth', {}),
-        'CNN Baseline':           (WaferCNN,              'best_cnn.pth',    {}),
-        'Vision Transformer':     (WaferViT,              'best_vit.pth',    {}),
-    }
-    cls, wpath, kwargs = model_map[model_name]
-    model = cls(num_classes=num_classes, **kwargs).to(DEVICE)
-    if os.path.exists(wpath):
-        model.load_state_dict(
-            torch.load(wpath, map_location=DEVICE, weights_only=True))
-        model.eval()
-        return model, True   # (model, weights_loaded)
-    model.eval()
-    return model, False      # weights not found — random (demo mode)
+def _detect_hybrid_config(sd):
+    """Infer exact HybridCNNTransformer config from weight tensor shapes."""
+    d_model      = sd['pos_embed'].shape[2]
+    num_layers   = max(int(k.split('.')[2]) for k in sd if k.startswith('transformer.layers.')) + 1
+    nhead        = 8 if d_model >= 256 else 4
+    deep_backbone= sd['cnn_backbone.0.weight'].shape[0] == 64
+    num_classes  = [v for k, v in sd.items() if 'head' in k and v.ndim == 2][-1].shape[0]
+    return dict(d_model=d_model, nhead=nhead, num_layers=num_layers,
+                deep_backbone=deep_backbone, num_classes=num_classes)
 
+
+def load_model(model_name: str, num_classes: int):
+    """Load weights — auto-detects architecture from checkpoint shape."""    wmap = {
+        'Hybrid CNN-Transformer': 'best_hybrid.pth',
+        'CNN Baseline':           'best_cnn.pth',
+        'Vision Transformer':     'best_vit.pth',
+    }
+    wpath = wmap[model_name]
+    if not os.path.exists(wpath):
+        model = HybridCNNTransformer(num_classes=num_classes).to(DEVICE)
+        model.eval()
+        return model, False
+    sd = torch.load(wpath, map_location=DEVICE, weights_only=True)
+    if model_name == 'Hybrid CNN-Transformer':
+        cfg   = _detect_hybrid_config(sd)
+        model = HybridCNNTransformer(**cfg).to(DEVICE)
+    elif model_name == 'CNN Baseline':
+        model = WaferCNN(num_classes=num_classes).to(DEVICE)
+    else:
+        model = WaferViT(num_classes=num_classes).to(DEVICE)
+    model.load_state_dict(sd)
+    model.eval()
+    return model, True
 
 def preprocess(img_pil: Image.Image, size: int) -> torch.Tensor:
     """Convert any uploaded image → model-ready tensor matching training pipeline."""
@@ -536,24 +562,22 @@ def _conv2d_np(img, kernel):
     return (patches * kernel).sum(axis=(-2,-1))
 
 def _jet_colormap(g):
-    t = g.astype(np.float32)/255
-    r  = np.clip(1.5-np.abs(4*t-3), 0, 1)
-    g2 = np.clip(1.5-np.abs(4*t-2), 0, 1)
-    b  = np.clip(1.5-np.abs(4*t-1), 0, 1)
-    return (np.stack([r,g2,b],-1)*255).astype(np.uint8)
+    t  = g.astype(np.float32) / 255
+    r  = np.clip(1.5 - np.abs(4*t - 3), 0, 1)
+    g2 = np.clip(1.5 - np.abs(4*t - 2), 0, 1)
+    b  = np.clip(1.5 - np.abs(4*t - 1), 0, 1)
+    return (np.stack([r, g2, b], -1) * 255).astype(np.uint8)
 
 def make_heatmap(img_pil: Image.Image, size: int = 64) -> np.ndarray:
-    """Attention heatmap — pure numpy + PIL, no cv2 needed."""
-    gray = np.array(img_pil.convert('L').resize((size,size),Image.NEAREST),dtype=np.float32)
+    """Activation heatmap — pure numpy + PIL, no external deps."""    gray = np.array(img_pil.convert('L').resize((size, size), Image.NEAREST), dtype=np.float32)
     mn, mx = gray.min(), gray.max()
-    norm = (gray - mn) / ((mx - mn) + 1e-6)
-    heat = _conv2d_np(norm, _gauss2d())
-    heat_up = np.array(Image.fromarray(heat).resize((224,224),Image.BILINEAR),dtype=np.float32)
-    heat_u8  = np.uint8(255 * heat_up / (heat_up.max()+1e-6))
-    heatmap  = _jet_colormap(heat_u8)
-    orig     = np.array(img_pil.convert('RGB').resize((224,224),Image.BILINEAR))
-    return np.clip(orig*0.55 + heatmap*0.45, 0, 255).astype(np.uint8)
-
+    norm    = (gray - mn) / ((mx - mn) + 1e-6)
+    heat    = _conv2d_np(norm, _gauss2d())
+    heat_up = np.array(Image.fromarray(heat).resize((224, 224), Image.BILINEAR), dtype=np.float32)
+    heat_u8 = np.uint8(255 * heat_up / (heat_up.max() + 1e-6))
+    heatmap = _jet_colormap(heat_u8)
+    orig    = np.array(img_pil.convert('RGB').resize((224, 224), Image.BILINEAR))
+    return np.clip(orig * 0.55 + heatmap * 0.45, 0, 255).astype(np.uint8)
 
 def fig_to_b64(fig) -> str:
     buf = io.BytesIO()
