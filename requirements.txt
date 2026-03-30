@@ -1,37 +1,20 @@
-# =============================================================================
-# requirements.txt — Silicon Wafer Defect Detection · Streamlit App
-# Install: pip install -r requirements.txt
-# Python: 3.9 – 3.11  (3.12 not yet fully supported by ultralytics)
-# =============================================================================
-
-# ── Web App ───────────────────────────────────────────────────────────────────
 streamlit==1.35.0
 
-# ── Deep Learning ─────────────────────────────────────────────────────────────
-torch==2.3.0
-torchvision==0.18.0
-# NOTE: Install CPU-only torch to keep image size small for deployment:
-# pip install torch==2.3.0 torchvision==0.18.0 --index-url https://download.pytorch.org/whl/cpu
+# Compatible Torch (IMPORTANT FIX)
+torch==2.9.0
+torchvision==0.24.0
 
-# ── Computer Vision ───────────────────────────────────────────────────────────
-opencv-python-headless==4.10.0.82    # headless = no GUI deps (safe for servers)
+opencv-python-headless==4.10.0.82
 Pillow==10.3.0
 
-# ── Numerical / Data ──────────────────────────────────────────────────────────
 numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.5.0
 
-# ── Augmentation (used in training; needed if inference uses A.transforms) ────
 albumentations==1.3.1
 
-# ── Visualisation ─────────────────────────────────────────────────────────────
 matplotlib==3.9.0
 seaborn==0.13.2
 
-# ── YOLO (optional — only needed if running YOLO inference in the app) ─────────
-# ultralytics==8.2.0
-
-# ── Utilities ─────────────────────────────────────────────────────────────────
 tqdm==4.66.4
 psutil==5.9.8
