@@ -338,17 +338,13 @@ class WaferCNN(nn.Module):
 
 
 class HybridCNNTransformer(nn.Module):
-    def __init__(self, num_classes=9, img_size=64, d_model=256, nhead=8,
-                 num_layers=4, dropout=0.3):
+    def __init__(self, num_classes=9, img_size=64, d_model=128, nhead=4,
+                 num_layers=2, dropout=0.3):
         super().__init__()
         self.cnn_backbone = nn.Sequential(
-            nn.Conv2d(3,64,3,padding=1),   nn.BatchNorm2d(64),    nn.ReLU(),
-            nn.Conv2d(64,64,3,padding=1),  nn.BatchNorm2d(64),    nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(64,128,3,padding=1), nn.BatchNorm2d(128),   nn.ReLU(),
-            nn.Conv2d(128,128,3,padding=1),nn.BatchNorm2d(128),   nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(128,d_model,3,padding=1),nn.BatchNorm2d(d_model),nn.ReLU(),
+            nn.Conv2d(3, 32, 3, padding=1),  nn.BatchNorm2d(32),  nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64),  nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(64, d_model, 3, padding=1), nn.BatchNorm2d(d_model), nn.ReLU(),
         )
         with torch.no_grad():
             dummy = torch.zeros(1, 3, img_size, img_size)
@@ -358,12 +354,11 @@ class HybridCNNTransformer(nn.Module):
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
         enc = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=nhead, dim_feedforward=d_model*4,
-            dropout=dropout, batch_first=True, norm_first=True)
+            dropout=dropout, batch_first=True)
         self.transformer = nn.TransformerEncoder(enc, num_layers=num_layers)
         self.head = nn.Sequential(
             nn.LayerNorm(d_model),
-            nn.Linear(d_model,512), nn.GELU(), nn.Dropout(dropout),
-            nn.Linear(512,256),     nn.GELU(), nn.Dropout(dropout*0.5),
+            nn.Linear(d_model,256), nn.GELU(), nn.Dropout(dropout),
             nn.Linear(256,num_classes),
         )
     def forward(self, x):
@@ -491,9 +486,9 @@ def load_class_names():
 def load_model(model_name: str, num_classes: int):
     """Load model weights — cached so it only runs once."""
     model_map = {
-        'Hybrid CNN-Transformer': (HybridCNNTransformer, 'models/best_hybrid.pth', {}),
-        'CNN Baseline':           (WaferCNN,              'models/best_cnn.pth',    {}),
-        'Vision Transformer':     (WaferViT,              'models/best_vit.pth',    {}),
+        'Hybrid CNN-Transformer': (HybridCNNTransformer, 'best_hybrid.pth', {}),
+        'CNN Baseline':           (WaferCNN,              'best_cnn.pth',    {}),
+        'Vision Transformer':     (WaferViT,              'best_vit.pth',    {}),
     }
     cls, wpath, kwargs = model_map[model_name]
     model = cls(num_classes=num_classes, **kwargs).to(DEVICE)
@@ -508,7 +503,6 @@ def load_model(model_name: str, num_classes: int):
 
 def preprocess(img_pil: Image.Image, size: int) -> torch.Tensor:
     """Convert any uploaded image → model-ready tensor matching training pipeline."""
-    # PIL NEAREST interpolation matches training pipeline
     img_gray = img_pil.convert('L').resize((size, size), Image.NEAREST)
     img_gray = np.array(img_gray, dtype=np.float32) / 255.0
     img_3ch  = np.stack([img_gray]*3, axis=-1)           # (H, W, 3)
@@ -528,42 +522,37 @@ def run_inference(model, tensor: torch.Tensor, class_names):
     return pred_cls, confidence, probs_dict
 
 
-def _gaussian_kernel_2d(size: int = 9, sigma: float = 3.0) -> np.ndarray:
+def _gauss2d(size=9, sigma=3.0):
     ax = np.arange(size) - size // 2
-    k  = np.exp(-0.5 * (ax / sigma) ** 2)
-    k /= k.sum()
+    k  = np.exp(-0.5 * (ax / sigma) ** 2); k /= k.sum()
     return np.outer(k, k)
 
-def _convolve2d_np(img: np.ndarray, kernel: np.ndarray) -> np.ndarray:
+def _conv2d_np(img, kernel):
     from numpy.lib.stride_tricks import as_strided
-    kh, kw  = kernel.shape
-    ph, pw  = kh // 2, kw // 2
-    padded  = np.pad(img, ((ph, ph), (pw, pw)), mode='reflect')
-    H, W    = img.shape
-    st      = padded.strides
-    patches = as_strided(padded, shape=(H, W, kh, kw),
-                         strides=(st[0], st[1], st[0], st[1]))
-    return (patches * kernel).sum(axis=(-2, -1))
+    kh, kw = kernel.shape; ph, pw = kh//2, kw//2
+    p = np.pad(img, ((ph,ph),(pw,pw)), mode='reflect')
+    H, W, s = img.shape[0], img.shape[1], p.strides
+    patches = as_strided(p, shape=(H,W,kh,kw), strides=(s[0],s[1],s[0],s[1]))
+    return (patches * kernel).sum(axis=(-2,-1))
 
-def _jet_colormap(g: np.ndarray) -> np.ndarray:
-    t = g.astype(np.float32) / 255.0
-    r = np.clip(1.5 - np.abs(4*t - 3), 0, 1)
-    g2= np.clip(1.5 - np.abs(4*t - 2), 0, 1)
-    b = np.clip(1.5 - np.abs(4*t - 1), 0, 1)
-    return (np.stack([r, g2, b], axis=-1) * 255).astype(np.uint8)
+def _jet_colormap(g):
+    t = g.astype(np.float32)/255
+    r  = np.clip(1.5-np.abs(4*t-3), 0, 1)
+    g2 = np.clip(1.5-np.abs(4*t-2), 0, 1)
+    b  = np.clip(1.5-np.abs(4*t-1), 0, 1)
+    return (np.stack([r,g2,b],-1)*255).astype(np.uint8)
 
 def make_heatmap(img_pil: Image.Image, size: int = 64) -> np.ndarray:
-    """Attention heatmap using pure numpy + PIL."""
-    gray = np.array(img_pil.convert('L').resize((size, size), Image.NEAREST), dtype=np.float32)
-    #norm = (gray - gray.min()) / (gray.ptp() + 1e-6)
-    norm = (gray - gray.min()) / ((gray.max() - gray.min()) + 1e-6)
-    heat = _convolve2d_np(norm, _gaussian_kernel_2d(9, 3))
-    heat_up = np.array(Image.fromarray(heat).resize((224, 224), Image.BILINEAR), dtype=np.float32)
-    heat_u8 = np.uint8(255 * heat_up / (heat_up.max() + 1e-6))
-    heatmap = _jet_colormap(heat_u8)
-    orig    = np.array(img_pil.convert('RGB').resize((224, 224), Image.BILINEAR))
-    overlay = np.clip(orig * 0.55 + heatmap * 0.45, 0, 255).astype(np.uint8)
-    return overlay
+    """Attention heatmap — pure numpy + PIL, no cv2 needed."""
+    gray = np.array(img_pil.convert('L').resize((size,size),Image.NEAREST),dtype=np.float32)
+    mn, mx = gray.min(), gray.max()
+    norm = (gray - mn) / ((mx - mn) + 1e-6)
+    heat = _conv2d_np(norm, _gauss2d())
+    heat_up = np.array(Image.fromarray(heat).resize((224,224),Image.BILINEAR),dtype=np.float32)
+    heat_u8  = np.uint8(255 * heat_up / (heat_up.max()+1e-6))
+    heatmap  = _jet_colormap(heat_u8)
+    orig     = np.array(img_pil.convert('RGB').resize((224,224),Image.BILINEAR))
+    return np.clip(orig*0.55 + heatmap*0.45, 0, 255).astype(np.uint8)
 
 
 def fig_to_b64(fig) -> str:
@@ -658,7 +647,7 @@ with tab_predict:
 
         if uploaded:
             img_pil = Image.open(uploaded).convert('RGB')
-            st.image(img_pil, caption="Uploaded Wafer Map", use_container_width=True)
+            st.image(img_pil, caption="Uploaded Wafer Map", width='stretch')
 
             # Image stats
             arr = np.array(img_pil.convert('L'))
@@ -681,7 +670,7 @@ with tab_predict:
 
             if show_heatmap:
                 overlay = make_heatmap(img_pil)
-                st.image(overlay, caption="Activation Heatmap", use_container_width=True)
+                st.image(overlay, caption="Activation Heatmap", width='stretch')
         else:
             st.markdown("""
             <div style='background:#111827; border:2px dashed #1e2d45; border-radius:10px;
@@ -706,7 +695,7 @@ with tab_predict:
 
             if not weights_ok:
                 st.warning("⚠️ Model weights not found — running in **demo mode** (random weights). "
-                           "Place `.pth` files in `models/` folder.", icon="⚠️")
+                           "Place `best_hybrid.pth` in the same folder as `app.py`.", icon="⚠️")
 
             # ── Inference ─────────────────────────────────────────────────
             start = time.perf_counter()
@@ -785,7 +774,7 @@ with tab_predict:
             ax.set_yticklabels([]); ax.set_yticks([0.25, 0.5, 0.75, 1.0])
             ax.grid(color='#1e2d45', linewidth=0.8)
             ax.spines['polar'].set_color('#1e2d45')
-            st.pyplot(fig, use_container_width=True)
+            st.pyplot(fig, width='stretch')
             plt.close(fig)
 
         else:
@@ -883,7 +872,7 @@ with tab_batch:
             df[['Icon','File','Prediction','Confidence','Status']].rename(
                 columns={'Icon':'','File':'Filename','Prediction':'Defect Class',
                          'Confidence':'Confidence','Status':'Result'}),
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
         )
 
@@ -905,7 +894,7 @@ with tab_batch:
         for sp in ax2.spines.values(): sp.set_color('#1e2d45')
         ax2.yaxis.set_tick_params(colors='#1e2d45')
         ax2.grid(axis='y', color='#1e2d45', linewidth=0.5)
-        st.pyplot(fig2, use_container_width=True)
+        st.pyplot(fig2, width='stretch')
         plt.close(fig2)
     else:
         st.info("Upload multiple images above to run batch classification.", icon="📂")
