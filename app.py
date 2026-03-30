@@ -505,17 +505,23 @@ def _detect_hybrid_config(sd):
 
 
 def load_model(model_name: str, num_classes: int):
-    """Load weights — auto-detects architecture from checkpoint shape."""    wmap = {
+    """Load weights — auto-detects architecture from checkpoint shape."""
+    
+    wmap = {
         'Hybrid CNN-Transformer': 'best_hybrid.pth',
         'CNN Baseline':           'best_cnn.pth',
         'Vision Transformer':     'best_vit.pth',
     }
+
     wpath = wmap[model_name]
+
     if not os.path.exists(wpath):
         model = HybridCNNTransformer(num_classes=num_classes).to(DEVICE)
         model.eval()
         return model, False
-    sd = torch.load(wpath, map_location=DEVICE, weights_only=True)
+
+    sd = torch.load(wpath, map_location=DEVICE)
+
     if model_name == 'Hybrid CNN-Transformer':
         cfg   = _detect_hybrid_config(sd)
         model = HybridCNNTransformer(**cfg).to(DEVICE)
@@ -523,10 +529,10 @@ def load_model(model_name: str, num_classes: int):
         model = WaferCNN(num_classes=num_classes).to(DEVICE)
     else:
         model = WaferViT(num_classes=num_classes).to(DEVICE)
+
     model.load_state_dict(sd)
     model.eval()
     return model, True
-
 def preprocess(img_pil: Image.Image, size: int) -> torch.Tensor:
     """Convert any uploaded image → model-ready tensor matching training pipeline."""
     img_gray = img_pil.convert('L').resize((size, size), Image.NEAREST)
