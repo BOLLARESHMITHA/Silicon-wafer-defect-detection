@@ -313,31 +313,6 @@ hr { border-color: var(--border) !important; }
 # MODEL DEFINITIONS  (must match training architecture exactly)
 # ══════════════════════════════════════════════════════════════════════════════
 
-class WaferCNN(nn.Module):
-    def __init__(self, num_classes=9):
-        super().__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(3,32,3,padding=1),  nn.BatchNorm2d(32),  nn.ReLU(),
-            nn.Conv2d(32,32,3,padding=1), nn.BatchNorm2d(32),  nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(32,64,3,padding=1),  nn.BatchNorm2d(64),  nn.ReLU(),
-            nn.Conv2d(64,64,3,padding=1),  nn.BatchNorm2d(64),  nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(64,128,3,padding=1), nn.BatchNorm2d(128), nn.ReLU(),
-            nn.Conv2d(128,128,3,padding=1),nn.BatchNorm2d(128), nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(128,256,3,padding=1),nn.BatchNorm2d(256), nn.ReLU(),
-            nn.Conv2d(256,256,3,padding=1),nn.BatchNorm2d(256), nn.ReLU(),
-        )
-        self.classifier = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1), nn.Flatten(),
-            nn.Linear(256,512), nn.ReLU(), nn.Dropout(0.4),
-            nn.Linear(512,256), nn.ReLU(), nn.Dropout(0.3),
-            nn.Linear(256,num_classes),
-        )
-    def forward(self, x): return self.classifier(self.features(x))
-
-
 class HybridCNNTransformer(nn.Module):
     def __init__(self, num_classes=9, img_size=64, d_model=256, nhead=8,
                  num_layers=4, dropout=0.3):
@@ -376,88 +351,12 @@ class HybridCNNTransformer(nn.Module):
         return self.head(feat.mean(dim=1))
 
 
-class DropPath(nn.Module):
-    def __init__(self, drop_prob=0.0):
-        super().__init__()
-        self.drop_prob = drop_prob
-    def forward(self, x):
-        if self.drop_prob == 0.0 or not self.training: return x
-        keep  = 1 - self.drop_prob
-        shape = (x.shape[0],) + (1,)*(x.ndim-1)
-        rand  = torch.rand(shape, dtype=x.dtype, device=x.device)
-        return x * rand.floor().div(keep)
-
-class PatchEmbed(nn.Module):
-    def __init__(self, img_size=224, patch_size=16, in_ch=3, embed_dim=192):
-        super().__init__()
-        self.num_patches = (img_size // patch_size) ** 2
-        self.proj = nn.Conv2d(in_ch, embed_dim, kernel_size=patch_size, stride=patch_size)
-    def forward(self, x): return self.proj(x).flatten(2).transpose(1,2)
-
-class ViTAttention(nn.Module):
-    def __init__(self, embed_dim=192, num_heads=3, attn_dropout=0.1, proj_dropout=0.1):
-        super().__init__()
-        self.num_heads = num_heads
-        self.head_dim  = embed_dim // num_heads
-        self.scale     = self.head_dim ** -0.5
-        self.qkv       = nn.Linear(embed_dim, embed_dim*3, bias=True)
-        self.proj      = nn.Linear(embed_dim, embed_dim)
-        self.attn_drop = nn.Dropout(attn_dropout)
-        self.proj_drop = nn.Dropout(proj_dropout)
-    def forward(self, x):
-        B,N,C = x.shape
-        qkv  = self.qkv(x).reshape(B,N,3,self.num_heads,self.head_dim).permute(2,0,3,1,4)
-        q,k,v = qkv.unbind(0)
-        attn = (q @ k.transpose(-2,-1)) * self.scale
-        attn = self.attn_drop(attn.softmax(dim=-1))
-        return self.proj_drop(self.proj((attn @ v).transpose(1,2).reshape(B,N,C)))
-
-class ViTBlock(nn.Module):
-    def __init__(self, embed_dim=192, num_heads=3, mlp_ratio=4.0, dropout=0.1, drop_path=0.0):
-        super().__init__()
-        self.norm1    = nn.LayerNorm(embed_dim, eps=1e-6)
-        self.attn     = ViTAttention(embed_dim, num_heads, dropout, dropout)
-        self.norm2    = nn.LayerNorm(embed_dim, eps=1e-6)
-        mlp_dim       = int(embed_dim * mlp_ratio)
-        self.mlp      = nn.Sequential(
-            nn.Linear(embed_dim,mlp_dim), nn.GELU(), nn.Dropout(dropout),
-            nn.Linear(mlp_dim,embed_dim), nn.Dropout(dropout))
-        self.drop_path = DropPath(drop_path) if drop_path > 0 else nn.Identity()
-    def forward(self, x):
-        x = x + self.drop_path(self.attn(self.norm1(x)))
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x
-
-class WaferViT(nn.Module):
-    def __init__(self, img_size=224, patch_size=16, in_ch=3,
-                 embed_dim=192, depth=12, num_heads=3,
-                 mlp_ratio=4.0, num_classes=9, dropout=0.1, drop_path_rate=0.1):
-        super().__init__()
-        self.patch_embed = PatchEmbed(img_size, patch_size, in_ch, embed_dim)
-        num_patches      = self.patch_embed.num_patches
-        self.cls_token   = nn.Parameter(torch.zeros(1,1,embed_dim))
-        self.pos_embed   = nn.Parameter(torch.zeros(1,num_patches+1,embed_dim))
-        self.pos_drop    = nn.Dropout(dropout)
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
-        self.blocks      = nn.Sequential(*[ViTBlock(embed_dim,num_heads,mlp_ratio,dropout,dpr[i]) for i in range(depth)])
-        self.norm        = nn.LayerNorm(embed_dim, eps=1e-6)
-        self.head_drop   = nn.Dropout(0.3)
-        self.head        = nn.Linear(embed_dim, num_classes)
-    def forward(self, x):
-        B  = x.shape[0]
-        x  = self.patch_embed(x)
-        x  = self.pos_drop(torch.cat([self.cls_token.expand(B,-1,-1), x], dim=1) + self.pos_embed)
-        x  = self.norm(self.blocks(x))
-        return self.head(self.head_drop(x[:,0]))
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # CONSTANTS & HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
 CLASS_NAMES = ['Center','Donut','Edge-Loc','Edge-Ring','Loc','Near-full','Random','Scratch','none']
 IMG_SIZE_CNN = 64
-IMG_SIZE_VIT = 224
 DEVICE       = torch.device('cpu')   # CPU for deployment
 
 # Defect descriptions for the UI
@@ -491,20 +390,16 @@ def load_class_names():
 @st.cache_resource(show_spinner=False)
 def load_model(model_name: str, num_classes: int):
     """Load model weights — cached so it only runs once."""
-    model_map = {
-        'Hybrid CNN-Transformer': (HybridCNNTransformer, 'models/best_hybrid.pth', {}),
-        'CNN Baseline':           (WaferCNN,              'models/best_cnn.pth',    {}),
-        'Vision Transformer':     (WaferViT,              'models/best_vit.pth',    {}),
-    }
-    cls, wpath, kwargs = model_map[model_name]
-    model = cls(num_classes=num_classes, **kwargs).to(DEVICE)
+    # Only best_hybrid.pth is needed — place it in the same folder as app.py
+    wpath = 'best_hybrid.pth'
+    model = HybridCNNTransformer(num_classes=num_classes).to(DEVICE)
     if os.path.exists(wpath):
         model.load_state_dict(
             torch.load(wpath, map_location=DEVICE, weights_only=True))
         model.eval()
         return model, True   # (model, weights_loaded)
     model.eval()
-    return model, False      # weights not found — random (demo mode)
+    return model, False      # weights not found — demo mode
 
 
 def preprocess(img_pil: Image.Image, size: int) -> torch.Tensor:
@@ -568,14 +463,8 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("**⚙️ Model Selection**")
-    model_choice = st.selectbox(
-        "Architecture",
-        ['Hybrid CNN-Transformer', 'CNN Baseline', 'Vision Transformer'],
-        help="Hybrid achieves the highest accuracy. CNN is fastest. ViT captures global patterns."
-    )
-
     st.markdown("**🎚️ Inference Settings**")
+    model_choice = 'Hybrid CNN-Transformer'  # only model used
     conf_threshold = st.slider("Confidence Threshold", 0.0, 1.0, 0.5, 0.05,
                                help="Predictions below this are flagged as uncertain.")
     show_heatmap   = st.checkbox("Show Attention Heatmap", value=True)
@@ -606,7 +495,6 @@ st.markdown("""
     <div class='hero-sub'>WM811K Dataset · Deep Learning · 9-Class Classification</div>
     <div style='margin-top:8px;'>
         <span class='hero-badge'>CNN</span>
-        <span class='hero-badge'>Vision Transformer</span>
         <span class='hero-badge'>Hybrid CNN-ViT</span>
         <span class='hero-badge'>9 Classes</span>
         <span class='hero-badge'>YOLOv11</span>
@@ -677,7 +565,7 @@ with tab_predict:
         if uploaded:
             class_names = load_class_names()
             num_classes = len(class_names)
-            img_size    = IMG_SIZE_VIT if model_choice == 'Vision Transformer' else IMG_SIZE_CNN
+            img_size    = IMG_SIZE_CNN
 
             # ── Load model ────────────────────────────────────────────────
             with st.spinner(f"Loading {model_choice}..."):
@@ -802,7 +690,7 @@ with tab_batch:
     if batch_files:
         class_names = load_class_names()
         num_classes = len(class_names)
-        img_size    = IMG_SIZE_VIT if model_choice == 'Vision Transformer' else IMG_SIZE_CNN
+        img_size    = IMG_SIZE_CNN
 
         with st.spinner(f"Loading {model_choice}..."):
             model, weights_ok = load_model(model_choice, num_classes)
@@ -907,21 +795,13 @@ with tab_about:
                     <th style='text-align:right; padding:6px 4px;'>Params</th>
                     <th style='text-align:right; padding:6px 4px;'>Target Acc</th>
                 </tr>
-                <tr style='border-bottom:1px solid #1e2d45; color:#e2e8f0;'>
-                    <td style='padding:7px 4px;'>CNN Baseline (4-block)</td>
-                    <td style='text-align:right;'>~2.1M</td>
-                    <td style='text-align:right; color:#10b981;'>&gt;90%</td>
-                </tr>
+
                 <tr style='border-bottom:1px solid #1e2d45; color:#e2e8f0;'>
                     <td style='padding:7px 4px;'>Hybrid CNN-Transformer</td>
                     <td style='text-align:right;'>~5.8M</td>
                     <td style='text-align:right; color:#10b981;'>&gt;92%</td>
                 </tr>
-                <tr style='color:#e2e8f0;'>
-                    <td style='padding:7px 4px;'>ViT-Tiny (scratch)</td>
-                    <td style='text-align:right;'>~5.7M</td>
-                    <td style='text-align:right; color:#10b981;'>&gt;91%</td>
-                </tr>
+
             </table>
         </div>
         """, unsafe_allow_html=True)
