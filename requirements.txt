@@ -1,22 +1,19 @@
-streamlit==1.35.0
+streamlit>=1.40.0
 
-# Torch (already fixed)
 torch==2.9.0
 torchvision==0.24.0
 
-# FIX THIS ↓ (VERY IMPORTANT)
 Pillow>=11.0.0
-
 opencv-python-headless==4.10.0.82
 
-numpy==1.26.4
-pandas==2.2.2
-scikit-learn==1.5.0
+numpy>=1.26.0
+pandas>=2.2.0
+scikit-learn>=1.5.0
 
 albumentations==1.3.1
 
-matplotlib==3.9.0
-seaborn==0.13.2
+matplotlib>=3.9.0
+seaborn>=0.13.2
 
 tqdm==4.66.4
 psutil==5.9.8
