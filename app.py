@@ -555,7 +555,8 @@ def _jet_colormap(g: np.ndarray) -> np.ndarray:
 def make_heatmap(img_pil: Image.Image, size: int = 64) -> np.ndarray:
     """Attention heatmap using pure numpy + PIL."""
     gray = np.array(img_pil.convert('L').resize((size, size), Image.NEAREST), dtype=np.float32)
-    norm = (gray - gray.min()) / (gray.ptp() + 1e-6)
+    #norm = (gray - gray.min()) / (gray.ptp() + 1e-6)
+    norm = (gray - gray.min()) / ((gray.max() - gray.min()) + 1e-6)
     heat = _convolve2d_np(norm, _gaussian_kernel_2d(9, 3))
     heat_up = np.array(Image.fromarray(heat).resize((224, 224), Image.BILINEAR), dtype=np.float32)
     heat_u8 = np.uint8(255 * heat_up / (heat_up.max() + 1e-6))
