@@ -4,7 +4,6 @@ torch==2.9.0
 torchvision==0.24.0
 
 Pillow>=11.0.0
-opencv-python-headless==4.10.0.82
 
 numpy>=1.26.0
 pandas>=2.2.0
