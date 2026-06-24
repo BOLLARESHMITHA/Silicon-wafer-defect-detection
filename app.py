@@ -182,14 +182,16 @@ class HybridCNNTransformer(nn.Module):
 # ──────────────────────────────────────────────────────────────────────────────
 def show_custom_warning(model_name, error_details):
     st.markdown(f"""
-    <div style="background: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 12px; margin-bottom: 1rem; color: #78350f; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-        <div style="font-weight: 700; margin-bottom: 0.25rem; font-size: 0.9rem; display: flex; align-items: center;">
+    <div style="background: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #d97706; padding: 1rem; border-radius: 12px; margin-bottom: 1.2rem; color: #92400e; box-shadow: 0 1px 3px rgba(0,0,0,0.05); font-family: 'Inter', sans-serif;">
+        <div style="font-weight: 700; margin-bottom: 0.4rem; font-size: 0.9rem; display: flex; align-items: center; color: #92400e;">
             <span style="margin-right: 0.5rem; font-size: 1.1rem;">⚠️</span> Model Weights Missing
         </div>
-        <div style="font-size: 0.8rem; color: #b45309; line-height: 1.4;">
-            Could not load <strong>{model_name}</strong> weights. Run the training script or place 
+        <div style="font-size: 0.8rem; color: #b45309; line-height: 1.45;">
+            Could not load <strong>{model_name}</strong> weights. Place 
             <code>best_{model_name.lower()}.pth</code> in the app directory.<br>
-            <span style="font-family: monospace; font-size: 0.75rem; background: rgba(0,0,0,0.03); padding: 2px 4px; border-radius: 4px;">Error: {error_details}</span>
+            <div style="font-family: monospace; font-size: 0.75rem; background: rgba(217, 119, 6, 0.08); padding: 6px 10px; border-radius: 6px; color: #b45309; margin-top: 0.6rem; word-break: break-all; border: 1px solid rgba(217, 119, 6, 0.15);">
+                <strong>Error:</strong> {error_details}
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -292,7 +294,7 @@ def predict(model, model_name, pil_img):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# LIGHT THEME STYLES (Cleaned up, scoped, and high contrast)
+# HIGH-CONTRAST LIGHT THEME STYLES
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -302,17 +304,21 @@ st.markdown("""
 html, body, [class*="css"], [data-testid="stMarkdownContainer"] {
     font-family: 'Inter', sans-serif;
 }
-h1, h2, h3, .hero-title {
+h1, h2, h3, h4, h5, .hero-title {
     font-family: 'Space Grotesk', sans-serif;
 }
 
-/* Base Light Mode Background */
+/* Base Light Mode Background & High Contrast Typography */
 .stApp {
     background: #f8f9fa;
-    color: #1f2937;
+    color: #111827 !important;
 }
 
-/* Sidebar Styles - Enforcing clean light theme styling */
+.stApp p, .stApp span, .stApp label, .stApp li {
+    color: #1f2937 !important;
+}
+
+/* Sidebar Styles - Enforcing clean light theme styling and high contrast */
 section[data-testid="stSidebar"] {
     background: #ffffff !important;
     border-right: 1px solid #e5e7eb !important;
@@ -320,9 +326,34 @@ section[data-testid="stSidebar"] {
 
 section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
 section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] span,
 section[data-testid="stSidebar"] h3,
 section[data-testid="stSidebar"] h5 {
-    color: #1f2937 !important;
+    color: #111827 !important;
+}
+
+/* Fix checkboxes & labels to always be dark charcoal (fixes invisible checkbox labels) */
+div[data-testid="stCheckbox"] label p {
+    color: #111827 !important;
+    font-weight: 500 !important;
+}
+
+/* Fix File Uploader Styling - override dark background */
+div[data-testid="stFileUploader"] {
+    background-color: #f3f4f6 !important;
+    border: 1px dashed #d1d5db !important;
+    border-radius: 12px !important;
+    padding: 10px !important;
+}
+div[data-testid="stFileUploader"] section {
+    background-color: #f3f4f6 !important;
+}
+div[data-testid="stFileUploader"] label {
+    color: #111827 !important;
+    font-weight: 600 !important;
+}
+div[data-testid="stFileUploader"] [data-testid="stMarkdownContainer"] p {
+    color: #4b5563 !important;
 }
 
 /* HERO CONTAINER */
@@ -342,7 +373,7 @@ section[data-testid="stSidebar"] h5 {
 }
 .hero-sub {
     font-size: 1.05rem;
-    color: #4b5563;
+    color: #374151;
     margin-top: 0.8rem;
     line-height: 1.6;
 }
@@ -355,7 +386,7 @@ section[data-testid="stSidebar"] h5 {
     padding: 1.8rem;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
     margin-bottom: 1.5rem;
-    color: #1f2937;
+    color: #111827;
 }
 
 .section-label {
@@ -441,7 +472,7 @@ section[data-testid="stSidebar"] h5 {
 .model-card-name {
     font-size: 1.1rem;
     font-weight: 700;
-    color: #1f2937;
+    color: #111827;
     margin-bottom: 0.75rem;
 }
 .model-card-badge {
@@ -450,7 +481,7 @@ section[data-testid="stSidebar"] h5 {
 .model-card-conf {
     font-size: 0.875rem;
     font-weight: 500;
-    color: #6b7280;
+    color: #4b5563;
 }
 </style>
 """, unsafe_allow_html=True)
