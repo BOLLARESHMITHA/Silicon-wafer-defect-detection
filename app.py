@@ -1,6 +1,6 @@
 """
 Silicon Wafer Defect Detection — Streamlit App
-Polished UI: gradient hero, glass cards, defect-tag badges, bbox overlay, confidence chart.
+Light theme with multi-model comparison and improved UI
 """
 
 import io
@@ -203,7 +203,7 @@ def load_models():
         hybrid = HybridCNNTransformer(9).to(DEVICE)
         hybrid.load_state_dict(torch.load("best_hybrid.pth", map_location=DEVICE))
         hybrid.eval()
-        models["Hybrid (CNN+Transformer)"] = hybrid
+        models["Hybrid"] = hybrid
     except Exception as e:
         st.warning(f"Could not load Hybrid weights: {e}")
 
@@ -269,7 +269,7 @@ def predict(model, model_name, pil_img):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# STYLES
+# LIGHT THEME STYLES
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -279,109 +279,167 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 h1, h2, h3, .hero-title { font-family: 'Space Grotesk', sans-serif; }
 
 .stApp {
-    background: radial-gradient(circle at 15% 0%, #1b1033 0%, #0d0a1f 45%, #07050f 100%);
-    color: #e8e6f4;
+    background: linear-gradient(135deg, #f8f9fa 0%, #f0f2f5 100%);
+    color: #1a1a1a;
 }
 
 section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #150f2b 0%, #0c0918 100%);
-    border-right: 1px solid rgba(150,120,255,0.15);
+    background: linear-gradient(180deg, #ffffff 0%, #f5f7fa 100%);
+    border-right: 1px solid #e0e4e8;
 }
 
 /* HERO */
 .hero {
     padding: 2.2rem 2.4rem;
-    border-radius: 22px;
-    background: linear-gradient(120deg, rgba(124,58,237,0.35), rgba(34,211,238,0.15));
-    border: 1px solid rgba(168,140,255,0.25);
-    box-shadow: 0 8px 40px rgba(99,60,255,0.18);
+    border-radius: 20px;
+    background: linear-gradient(120deg, rgba(99, 102, 241, 0.1), rgba(59, 130, 246, 0.1));
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.08);
     margin-bottom: 1.6rem;
 }
 .hero-title {
-    font-size: 2.3rem;
+    font-size: 2.8rem;
     font-weight: 700;
-    background: linear-gradient(90deg, #c7b8ff, #8ef6ff);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    margin-bottom: 0.3rem;
+    color: #1f2937;
+    margin: 0;
 }
 .hero-sub {
-    color: #b7b0d4;
-    font-size: 1.02rem;
-    max-width: 760px;
+    font-size: 1.1rem;
+    color: #4b5563;
+    margin-top: 0.8rem;
+    line-height: 1.6;
 }
 
-/* CARD */
+/* GLASS CARD */
 .glass-card {
-    background: rgba(255,255,255,0.035);
-    border: 1px solid rgba(168,140,255,0.18);
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    border: 1px solid #e5e7eb;
     border-radius: 18px;
-    padding: 1.4rem 1.6rem;
-    backdrop-filter: blur(6px);
-    margin-bottom: 1.2rem;
-}
-
-/* BADGE */
-.defect-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.55rem 1.1rem;
-    border-radius: 999px;
-    font-weight: 600;
-    font-size: 1.05rem;
-    background: linear-gradient(90deg, rgba(34,211,238,0.18), rgba(124,58,237,0.18));
-    border: 1px solid rgba(94, 234, 212, 0.45);
-    color: #9dffe8;
-}
-
-.conf-pill {
-    display: inline-block;
-    padding: 0.25rem 0.8rem;
-    border-radius: 999px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    background: rgba(168,140,255,0.18);
-    border: 1px solid rgba(168,140,255,0.4);
-    color: #d6c9ff;
-    margin-left: 0.5rem;
+    padding: 1.8rem;
+    box-shadow: 0 2px 15px rgba(0, 0, 0, 0.05);
+    margin-bottom: 1.5rem;
 }
 
 .section-label {
-    font-size: 0.78rem;
-    letter-spacing: 0.12em;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #6366f1;
     text-transform: uppercase;
-    color: #8d84b8;
+    letter-spacing: 1px;
+    margin-bottom: 1rem;
+}
+
+/* BADGES */
+.defect-badge {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(59, 130, 246, 0.2));
+    border: 1.5px solid #6366f1;
+    color: #1f2937;
+    padding: 0.5rem 1.2rem;
+    border-radius: 24px;
     font-weight: 600;
-    margin-bottom: 0.4rem;
+    display: inline-block;
+    font-size: 0.95rem;
 }
 
-.qa-block {
-    border-left: 3px solid #7c3aed;
-    padding-left: 1rem;
-    margin-top: 0.8rem;
-}
-.qa-question { color: #c7b8ff; font-weight: 600; margin-bottom: 0.3rem; }
-.qa-answer { color: #d8d4ec; line-height: 1.55; }
-
-footer, header[data-testid="stHeader"] { background: transparent; }
-
-div[data-testid="stFileUploaderDropzone"] {
-    background: rgba(255,255,255,0.03);
-    border: 1.5px dashed rgba(168,140,255,0.4);
-    border-radius: 16px;
+.conf-pill {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(16, 185, 129, 0.15));
+    border: 1.5px solid #22c55e;
+    color: #15803d;
+    padding: 0.5rem 1.2rem;
+    border-radius: 24px;
+    font-weight: 600;
+    display: inline-block;
+    margin-left: 0.8rem;
+    font-size: 0.95rem;
 }
 
 .model-pill {
-    padding: 0.3rem 0.9rem;
-    border-radius: 999px;
-    background: rgba(34,211,238,0.12);
-    border: 1px solid rgba(34,211,238,0.35);
-    color: #aef0ff;
-    font-size: 0.82rem;
+    background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(234, 179, 8, 0.15));
+    border: 1px solid #f97316;
+    color: #92400e;
+    padding: 0.4rem 1rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
     font-weight: 600;
     display: inline-block;
+}
+
+/* QA BLOCK */
+.qa-block {
+    background: rgba(249, 250, 251, 0.7);
+    border-left: 4px solid #6366f1;
+    padding: 1.2rem;
+    border-radius: 8px;
+    margin-top: 1rem;
+}
+.qa-question {
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 0.8rem;
+}
+.qa-answer {
+    color: #4b5563;
+    line-height: 1.6;
+}
+
+/* STREAMLIT OVERRIDES */
+[data-testid="stCheckbox"] { color: #1a1a1a; }
+[data-testid="stSelectbox"] { color: #1a1a1a; }
+[data-testid="stMultiSelect"] { color: #1a1a1a; }
+
+.stButton>button {
+    background: linear-gradient(135deg, #6366f1 0%, #3b82f6 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+.stButton>button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+}
+
+/* MODEL COMPARISON GRID */
+.model-comparison {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.model-card {
+    background: white;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 1.5rem;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+    transition: all 0.3s ease;
+}
+
+.model-card:hover {
+    border-color: #6366f1;
+    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
+    transform: translateY(-2px);
+}
+
+.model-name {
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 0.8rem;
+    font-size: 1.1rem;
+}
+
+.model-prediction {
+    margin: 0.8rem 0;
+}
+
+.model-confidence {
+    font-size: 0.9rem;
+    color: #6b7280;
+    margin-top: 0.8rem;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -399,13 +457,26 @@ with st.sidebar:
         st.error("No model weights found. Make sure best_cnn.pth, best_vit.pth, and best_hybrid.pth are in the app directory.")
         st.stop()
 
-    model_choice = st.selectbox("Model architecture", list(models.keys()), index=0)
+    # Multi-model selection
+    selected_models = st.multiselect(
+        "Select models to compare",
+        options=list(models.keys()),
+        default=list(models.keys()),
+        help="Choose one or more models to run predictions"
+    )
+    
+    if not selected_models:
+        st.warning("Please select at least one model!")
+        st.stop()
+
     st.markdown(f"<span class='model-pill'>Running on {DEVICE.upper()}</span>", unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown("##### Defect classes")
-    for name, info in DEFECT_INFO.items():
-        st.markdown(f"{info['emoji']} **{name}**")
+    st.markdown("##### 📋 Defect Classes")
+    with st.expander("View all defect types", expanded=False):
+        for name, info in DEFECT_INFO.items():
+            st.markdown(f"**{info['emoji']} {name}**")
+            st.caption(info['desc'])
 
 # ──────────────────────────────────────────────────────────────────────────────
 # HERO
@@ -414,9 +485,8 @@ st.markdown("""
 <div class="hero">
     <div class="hero-title">Silicon Wafer Defect Detection</div>
     <div class="hero-sub">
-        Upload a wafer map and let a CNN, Vision Transformer, or Hybrid CNN+Transformer
-        model classify the defect pattern across 9 categories — with bounding-box localization
-        and full confidence breakdown.
+        Upload a wafer map and let AI models classify the defect pattern across 9 categories — 
+        compare multiple architectures (CNN, ViT, Hybrid) simultaneously for comprehensive analysis.
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -424,129 +494,150 @@ st.markdown("""
 # ──────────────────────────────────────────────────────────────────────────────
 # MAIN — UPLOAD
 # ──────────────────────────────────────────────────────────────────────────────
-left, right = st.columns([1, 1.3], gap="large")
+st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+st.markdown('<div class="section-label">📤 Input</div>', unsafe_allow_html=True)
+uploaded_file = st.file_uploader("Upload a wafer map image", type=["png", "jpg", "jpeg", "bmp"], label_visibility="collapsed")
+show_bbox = st.checkbox("Show defect bounding-box overlay", value=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-with left:
+# ──────────────────────────────────────────────────────────────────────────────
+# RESULTS SECTION (only shows when image is uploaded)
+# ──────────────────────────────────────────────────────────────────────────────
+if uploaded_file is not None:
+    pil_img = Image.open(io.BytesIO(uploaded_file.read()))
+    
+    # Show original image
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">Input</div>', unsafe_allow_html=True)
-    uploaded_file = st.file_uploader("Upload a wafer map image", type=["png", "jpg", "jpeg", "bmp"])
-
-    sample_note = st.checkbox("Use defect bounding-box overlay", value=True)
+    st.markdown('<div class="section-label">📸 Uploaded Image</div>', unsafe_allow_html=True)
+    st.image(pil_img, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    if uploaded_file is not None:
-        pil_img = Image.open(io.BytesIO(uploaded_file.read()))
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="section-label">Original Upload</div>', unsafe_allow_html=True)
-        st.image(pil_img, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+    # Run predictions for selected models
+    with st.spinner("🔄 Running inference on selected models..."):
+        results = {}
+        for model_name in selected_models:
+            model = models[model_name]
+            results[model_name] = predict(model, model_name, pil_img)
 
-with right:
-    if uploaded_file is None:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="section-label">Result</div>', unsafe_allow_html=True)
-        st.info("Upload a wafer map on the left to run a defect classification.")
-        st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        with st.spinner("Running inference..."):
-            model = models[model_choice]
-            result = predict(model, model_choice, pil_img)
-
+    # Display results for each model in a grid
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-label">🎯 Predictions</div>', unsafe_allow_html=True)
+    
+    cols = st.columns(len(selected_models))
+    for col, model_name in enumerate(selected_models):
+        result = results[model_name]
         info = DEFECT_INFO.get(result["pred_cls"], {"emoji": "❓", "desc": ""})
+        
+        with cols[col]:
+            st.markdown(f"""
+            <div style="text-align: center; padding: 1rem;">
+                <div class="model-name">{model_name}</div>
+                <div class="model-prediction">
+                    <span class="defect-badge" style="font-size:0.9rem;">{info['emoji']} {result['pred_cls']}</span>
+                </div>
+                <div class="model-confidence">{result['confidence']*100:.1f}% confidence</div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="section-label">Prediction</div>', unsafe_allow_html=True)
-        st.markdown(
-            f"""<span class="defect-badge">{info['emoji']} {result['pred_cls']}</span>
-            <span class="conf-pill">{result['confidence']*100:.1f}% confidence</span>""",
-            unsafe_allow_html=True,
-        )
-        st.markdown(f"<div style='margin-top:0.8rem; color:#bcb6d8;'>{info['desc']}</div>", unsafe_allow_html=True)
+    # Detailed analysis for first selected model
+    primary_model = selected_models[0]
+    primary_result = results[primary_model]
+    primary_info = DEFECT_INFO.get(primary_result["pred_cls"], {"emoji": "❓", "desc": ""})
 
-        # bbox overlay image
-        disp_img = result["img_resized"].copy()
-        if sample_note and result["bbox"] is not None:
-            h, w = disp_img.shape[:2]
-            xc, yc, bw, bh = result["bbox"]
-            x1 = int((xc - bw / 2) * w)
-            y1 = int((yc - bh / 2) * h)
-            x2 = int((xc + bw / 2) * w)
-            y2 = int((yc + bh / 2) * h)
-            disp_img = cv2.cvtColor(disp_img, cv2.COLOR_RGB2BGR)
-            cv2.rectangle(disp_img, (x1, y1), (x2, y2), (0, 60, 255), 2)
-            disp_img = cv2.cvtColor(disp_img, cv2.COLOR_BGR2RGB)
+    # Image with bounding box
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-label">🔍 Detailed Analysis</div>', unsafe_have_html=True)
+    
+    disp_img = primary_result["img_resized"].copy()
+    if show_bbox and primary_result["bbox"] is not None:
+        h, w = disp_img.shape[:2]
+        xc, yc, bw, bh = primary_result["bbox"]
+        x1 = int((xc - bw / 2) * w)
+        y1 = int((yc - bh / 2) * h)
+        x2 = int((xc + bw / 2) * w)
+        y2 = int((yc + bh / 2) * h)
+        disp_img = cv2.cvtColor(disp_img, cv2.COLOR_RGB2BGR)
+        cv2.rectangle(disp_img, (x1, y1), (x2, y2), (0, 150, 255), 3)
+        disp_img = cv2.cvtColor(disp_img, cv2.COLOR_BGR2RGB)
 
-        st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
-        st.image(disp_img, caption=f"{result['model_name']} input — {result['target_size']}×{result['target_size']}",
-                  use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # Confidence chart
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="section-label">Class Confidence</div>', unsafe_allow_html=True)
-        sorted_idx = np.argsort(result["probs"])
-        fig = go.Figure(go.Bar(
-            x=result["probs"][sorted_idx],
-            y=[CLASS_NAMES[i] for i in sorted_idx],
-            orientation="h",
-            marker=dict(
-                color=result["probs"][sorted_idx],
-                colorscale=[[0, "#3a2a6b"], [1, "#22d3ee"]],
-            ),
-            text=[f"{p*100:.1f}%" for p in result["probs"][sorted_idx]],
-            textposition="outside",
-        ))
-        fig.update_layout(
-            height=340,
-            margin=dict(l=10, r=30, t=10, b=10),
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#d8d4ec"),
-            xaxis=dict(range=[0, 1], showgrid=False, tickformat=".0%"),
-            yaxis=dict(showgrid=False),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # Q&A explanation block (matches the reference screenshot style)
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="section-label">Explanation</div>', unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 1], gap="large")
+    
+    with col1:
+        st.image(disp_img, caption=f"{primary_model} Input ({primary_result['target_size']}×{primary_result['target_size']})",
+                 use_container_width=True)
+    
+    with col2:
         st.markdown(f"""
-        <div class="qa-block">
-            <div class="qa-question">Question: What is the primary defect pattern in this wafer map?</div>
-            <div class="qa-answer">
-                Answer: The primary defect observed in this wafer is a
-                <span class="defect-badge" style="font-size:0.95rem; padding:0.3rem 0.7rem;">
-                    {info['emoji']} {result['pred_cls']}
-                </span> defect, predicted with {result['confidence']*100:.1f}% confidence
-                by the {result['model_name']} model.
-                {info['desc']}
+        <div style="padding: 1.5rem 0;">
+            <h3 style="color: #1f2937; margin-top: 0;">Primary Defect</h3>
+            <div style="margin: 1rem 0;">
+                <span class="defect-badge">{primary_info['emoji']} {primary_result['pred_cls']}</span>
+                <span class="conf-pill">{primary_result['confidence']*100:.1f}%</span>
+            </div>
+            <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(99, 102, 241, 0.05); border-radius: 10px; border-left: 3px solid #6366f1;">
+                <p style="margin: 0; color: #4b5563; line-height: 1.6;">{primary_info['desc']}</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# MODEL COMPARISON (optional, runs all loaded models)
-# ──────────────────────────────────────────────────────────────────────────────
-if uploaded_file is not None and len(models) > 1:
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">Compare All Models</div>', unsafe_allow_html=True)
-    cols = st.columns(len(models))
-    for col, (name, m) in zip(cols, models.items()):
-        with col:
-            r = predict(m, name, pil_img)
-            i = DEFECT_INFO.get(r["pred_cls"], {"emoji": "❓"})
-            st.markdown(f"**{name}**")
-            st.markdown(
-                f"<span class='defect-badge' style='font-size:0.9rem;'>{i['emoji']} {r['pred_cls']}</span>",
-                unsafe_allow_html=True,
-            )
-            st.caption(f"{r['confidence']*100:.1f}% confidence")
+    
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # Confidence distribution chart
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-label">📊 Class Confidence Distribution</div>', unsafe_have_html=True)
+    
+    sorted_idx = np.argsort(primary_result["probs"])
+    fig = go.Figure(go.Bar(
+        x=primary_result["probs"][sorted_idx],
+        y=[CLASS_NAMES[i] for i in sorted_idx],
+        orientation="h",
+        marker=dict(
+            color=primary_result["probs"][sorted_idx],
+            colorscale=[[0, "#e5e7eb"], [1, "#6366f1"]],
+        ),
+        text=[f"{p*100:.1f}%" for p in primary_result["probs"][sorted_idx]],
+        textposition="outside",
+    ))
+    fig.update_layout(
+        height=340,
+        margin=dict(l=10, r=30, t=10, b=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#4b5563", size=12),
+        xaxis=dict(range=[0, 1], showgrid=True, gridcolor="#e5e7eb", tickformat=".0%"),
+        yaxis=dict(showgrid=False),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # All models comparison table
+    if len(selected_models) > 1:
+        st.markdown('<div class="glass-card">', unsafe_have_html=True)
+        st.markdown('<div class="section-label">⚖️ Model Comparison</div>', unsafe_have_html=True)
+        
+        comparison_data = []
+        for model_name in selected_models:
+            r = results[model_name]
+            comparison_data.append({
+                "Model": model_name,
+                "Prediction": r["pred_cls"],
+                "Confidence": f"{r['confidence']*100:.1f}%",
+                "Input Size": f"{r['target_size']}×{r['target_size']}"
+            })
+        
+        import pandas as pd
+        df = pd.DataFrame(comparison_data)
+        
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.markdown('</div>', unsafe_have_html=True)
+
+# Footer
 st.markdown(
-    "<div style='text-align:center; color:#6e6790; padding:1.5rem 0; font-size:0.85rem;'>"
-    "Silicon Wafer Defect Detection · CNN / ViT / Hybrid CNN-Transformer</div>",
+    "<div style='text-align:center; color:#9ca3af; padding:2rem 0; font-size:0.85rem;'>"
+    "🔬 Silicon Wafer Defect Detection · Multi-Model AI Analysis<br>"
+    "CNN | Vision Transformer | Hybrid CNN-Transformer"
+    "</div>",
     unsafe_allow_html=True,
 )
