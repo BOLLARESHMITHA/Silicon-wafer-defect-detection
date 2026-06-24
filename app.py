@@ -158,7 +158,7 @@ class HybridCNNTransformer(nn.Module):
         seq_len = feat_h * feat_h
         self.pos_embed = nn.Parameter(torch.zeros(1, seq_len, d_model))
         encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead,
-                                                     dim_feedforward=d_model * 4, dropout=dropout, batch_first=True)
+                                                     dim_forward=d_model * 4, dropout=dropout, batch_first=True)
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.head = nn.Sequential(
             nn.LayerNorm(d_model),
@@ -612,7 +612,9 @@ if uploaded_file is not None:
     # Image with bounding box
     st.markdown(f"### 🔍 Detailed Defect Analysis ({primary_model})")
     
-    disp_img = primary_result["img_resized"].copy()
+    # Draw directly on the clear HIGH-RESOLUTION uploaded image
+    disp_img = np.array(pil_img.convert("RGB"))
+    
     if show_bbox and primary_result["bbox"] is not None:
         h, w = disp_img.shape[:2]
         xc, yc, bw, bh = primary_result["bbox"]
@@ -620,15 +622,14 @@ if uploaded_file is not None:
         y1 = int((yc - bh / 2) * h)
         x2 = int((xc + bw / 2) * w)
         y2 = int((yc + bh / 2) * h)
-        disp_img = cv2.cvtColor(disp_img, cv2.COLOR_RGB2BGR)
-        cv2.rectangle(disp_img, (x1, y1), (x2, y2), (239, 68, 68), 2) # Clean red overlay
-        disp_img = cv2.cvtColor(disp_img, cv2.COLOR_BGR2RGB)
+        
+        # Draw red bounding box directly on RGB image (no BGR conversion to avoid color swapping to blue)
+        cv2.rectangle(disp_img, (x1, y1), (x2, y2), (239, 68, 68), 3) # High-contrast red (RGB)
 
     col1, col2 = st.columns([1, 1], gap="large")
     
     with col1:
-        st.image(disp_img, caption=f"{primary_model} Input ({primary_result['target_size']}×{primary_result['target_size']})",
-                 use_container_width=True)
+        st.image(disp_img, caption=f"{primary_model} High-Resolution Analysis", use_container_width=True)
     
     with col2:
         st.markdown(f"""
