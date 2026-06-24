@@ -2,6 +2,7 @@
 Silicon Wafer Defect Detection — Streamlit App
 Light theme with multi-model comparison and improved UI
 """
+
 import io
 import math
 import numpy as np
@@ -11,6 +12,7 @@ import torch.nn as nn
 import streamlit as st
 from PIL import Image
 import plotly.graph_objects as go
+
 # ──────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ──────────────────────────────────────────────────────────────────────────────
@@ -20,9 +22,11 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 CLASS_NAMES = ['Center', 'Donut', 'Edge-Loc', 'Edge-Ring',
                'Loc', 'Near-full', 'Random', 'Scratch', 'none']
+
 DEFECT_INFO = {
     "Center":     {"emoji": "🎯", "desc": "Defects clustered around the wafer's center, often linked to centrifugal process steps (e.g. spin-coating, CMP)."},
     "Donut":      {"emoji": "🍩", "desc": "A ring-shaped defect band offset from the very center — frequently tied to uneven etch or deposition profiles."},
@@ -34,6 +38,7 @@ DEFECT_INFO = {
     "Scratch":    {"emoji": "📏", "desc": "A linear defect trail, typically caused by mechanical handling or wafer-to-wafer contact."},
     "none":       {"emoji": "✅", "desc": "No significant defect pattern detected — wafer appears clean."},
 }
+
 # ──────────────────────────────────────────────────────────────────────────────
 # MODEL DEFINITIONS (must match training architectures exactly)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -63,15 +68,21 @@ class WaferCNN(nn.Module):
             nn.Linear(1024, 256), nn.ReLU(), nn.Dropout(0.3),
             nn.Linear(256, num_classes)
         )
+
     def forward(self, x):
         return self.classifier(self.features(x))
+
+
 class PatchEmbed(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_ch=3, embed_dim=192):
         super().__init__()
         self.num_patches = (img_size // patch_size) ** 2
         self.proj = nn.Conv2d(in_ch, embed_dim, kernel_size=patch_size, stride=patch_size)
+
     def forward(self, x):
         return self.proj(x).flatten(2).transpose(1, 2)
+
+
 class ViTAttention(nn.Module):
     def __init__(self, embed_dim=192, num_heads=3, dropout=0.1):
         super().__init__()
@@ -81,12 +92,15 @@ class ViTAttention(nn.Module):
         self.qkv = nn.Linear(embed_dim, embed_dim * 3)
         self.proj = nn.Linear(embed_dim, embed_dim)
         self.dropout = nn.Dropout(dropout)
+
     def forward(self, x):
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
         q, k, v = qkv.unbind(0)
         attn = self.dropout((q @ k.transpose(-2, -1)) * self.scale).softmax(dim=-1)
         return self.proj((attn @ v).transpose(1, 2).reshape(B, N, C))
+
+
 class ViTBlock(nn.Module):
     def __init__(self, embed_dim=192, num_heads=3, mlp_ratio=4.0, dropout=0.1):
         super().__init__()
@@ -97,10 +111,13 @@ class ViTBlock(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(embed_dim, mlp_dim), nn.GELU(), nn.Dropout(dropout),
             nn.Linear(mlp_dim, embed_dim), nn.Dropout(dropout))
+
     def forward(self, x):
         x = x + self.attn(self.norm1(x))
         x = x + self.mlp(self.norm2(x))
         return x
+
+
 class WaferViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_ch=3, embed_dim=192,
                  depth=12, num_heads=3, mlp_ratio=4.0, num_classes=9, dropout=0.1):
@@ -113,6 +130,7 @@ class WaferViT(nn.Module):
         self.blocks = nn.Sequential(*[ViTBlock(embed_dim, num_heads, mlp_ratio, dropout) for _ in range(depth)])
         self.norm = nn.LayerNorm(embed_dim)
         self.head = nn.Linear(embed_dim, num_classes)
+
     def forward(self, x):
         B = x.shape[0]
         x = self.patch_embed(x)
@@ -120,6 +138,8 @@ class WaferViT(nn.Module):
         x = self.pos_drop(torch.cat([cls, x], dim=1) + self.pos_embed)
         x = self.norm(self.blocks(x))
         return self.head(x[:, 0])
+
+
 class HybridCNNTransformer(nn.Module):
     def __init__(self, num_classes=9, img_size=64, d_model=256, nhead=8, num_layers=4, dropout=0.5):
         super().__init__()
@@ -146,6 +166,7 @@ class HybridCNNTransformer(nn.Module):
             nn.Linear(512, 128), nn.GELU(), nn.Dropout(dropout),
             nn.Linear(128, num_classes)
         )
+
     def forward(self, x):
         feat = self.cnn_backbone(x)
         B, C, H, W = feat.shape
@@ -154,6 +175,8 @@ class HybridCNNTransformer(nn.Module):
         feat = self.transformer(feat)
         feat = feat.mean(dim=1)
         return self.head(feat)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # STYLISH CUSTOM ERROR/WARNING CARD
 # ──────────────────────────────────────────────────────────────────────────────
@@ -170,6 +193,8 @@ def show_custom_warning(model_name, error_details):
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # MODEL LOADING (cached)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -186,6 +211,7 @@ def load_models():
         models["CNN"] = cnn
     except Exception as e:
         load_errors["CNN"] = str(e)
+
     # Try ViT
     try:
         vit = WaferViT(num_classes=9).to(DEVICE)
@@ -194,6 +220,7 @@ def load_models():
         models["ViT"] = vit
     except Exception as e:
         load_errors["ViT"] = str(e)
+
     # Try Hybrid
     try:
         hybrid = HybridCNNTransformer(9).to(DEVICE)
@@ -202,7 +229,10 @@ def load_models():
         models["Hybrid"] = hybrid
     except Exception as e:
         load_errors["Hybrid"] = str(e)
+
     return models, load_errors
+
+
 def get_model_input_size(model):
     if hasattr(model, "patch_embed"):
         num_patches = model.patch_embed.num_patches
@@ -211,6 +241,8 @@ def get_model_input_size(model):
     if hasattr(model, "img_size"):
         return model.img_size
     return 64
+
+
 def get_largest_defect_bbox(raw_wafer):
     arr = np.array(raw_wafer, dtype=np.uint8)
     defect_mask = np.where(arr == 2, 255, 0).astype(np.uint8)
@@ -221,25 +253,33 @@ def get_largest_defect_bbox(raw_wafer):
     x, y, w, h = cv2.boundingRect(largest)
     img_h, img_w = arr.shape
     return [(x + w / 2.0) / img_w, (y + h / 2.0) / img_h, w / img_w, h / img_h]
+
+
 def predict(model, model_name, pil_img):
     img = np.array(pil_img.convert("RGB")).astype(np.float32)
     if img.max() > 1.0:
         img = img / 255.0
+
     target_size = get_model_input_size(model)
     img_resized = cv2.resize((img * 255).astype(np.uint8), (target_size, target_size),
                               interpolation=cv2.INTER_NEAREST)
     img_f = img_resized.astype(np.float32) / 255.0
+
     gray_raw = cv2.cvtColor(img_resized, cv2.COLOR_RGB2GRAY)
     raw_wafer = np.zeros_like(gray_raw, dtype=np.uint8)
     raw_wafer[gray_raw > 30] = 1
     raw_wafer[gray_raw > 180] = 2
+
     tensor = torch.tensor(img_f).permute(2, 0, 1).unsqueeze(0).to(DEVICE).float()
     with torch.no_grad():
         probs = torch.softmax(model(tensor), dim=1).cpu().numpy()[0]
+
     pred_idx = int(np.argmax(probs))
     pred_cls = CLASS_NAMES[pred_idx]
     confidence = float(probs[pred_idx])
+
     bbox = get_largest_defect_bbox(raw_wafer)
+
     return {
         "model_name": model_name,
         "img_resized": img_resized,
@@ -249,12 +289,15 @@ def predict(model, model_name, pil_img):
         "probs": probs,
         "bbox": bbox,
     }
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # LIGHT THEME STYLES (Cleaned up, scoped, and high contrast)
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
 /* Force font family globally */
 html, body, [class*="css"], [data-testid="stMarkdownContainer"] {
     font-family: 'Inter', sans-serif;
@@ -262,22 +305,26 @@ html, body, [class*="css"], [data-testid="stMarkdownContainer"] {
 h1, h2, h3, .hero-title {
     font-family: 'Space Grotesk', sans-serif;
 }
+
 /* Base Light Mode Background */
 .stApp {
     background: #f8f9fa;
     color: #1f2937;
 }
+
 /* Sidebar Styles - Enforcing clean light theme styling */
 section[data-testid="stSidebar"] {
     background: #ffffff !important;
     border-right: 1px solid #e5e7eb !important;
 }
+
 section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] h3,
 section[data-testid="stSidebar"] h5 {
     color: #1f2937 !important;
 }
+
 /* HERO CONTAINER */
 .hero {
     padding: 2.2rem 2.4rem;
@@ -299,8 +346,9 @@ section[data-testid="stSidebar"] h5 {
     margin-top: 0.8rem;
     line-height: 1.6;
 }
-/* SLEEK GLASS CARD */
-.glass-card {
+
+/* SLEEK GLASS CARD FOR CONTAINED CONTENT */
+.glass-card-complete {
     background: #ffffff;
     border: 1px solid #e5e7eb;
     border-radius: 18px;
@@ -309,6 +357,7 @@ section[data-testid="stSidebar"] h5 {
     margin-bottom: 1.5rem;
     color: #1f2937;
 }
+
 .section-label {
     font-size: 0.85rem;
     font-weight: 700;
@@ -320,6 +369,7 @@ section[data-testid="stSidebar"] h5 {
     align-items: center;
     gap: 0.5rem;
 }
+
 /* DEFECT BADGES & PILLS */
 .defect-badge {
     background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(59, 130, 246, 0.1));
@@ -333,6 +383,7 @@ section[data-testid="stSidebar"] h5 {
     font-size: 0.95rem;
     gap: 0.4rem;
 }
+
 .conf-pill {
     background: #ecfdf5;
     border: 1px solid #10b981;
@@ -345,6 +396,7 @@ section[data-testid="stSidebar"] h5 {
     margin-left: 0.5rem;
     font-size: 0.95rem;
 }
+
 .model-pill {
     background: #fff7ed;
     border: 1px solid #f97316;
@@ -355,6 +407,7 @@ section[data-testid="stSidebar"] h5 {
     font-weight: 600;
     display: inline-block;
 }
+
 /* STREAMLIT FORM OVERRIDES & BUTTONS */
 .stButton>button {
     background: linear-gradient(135deg, #6366f1 0%, #3b82f6 100%) !important;
@@ -370,6 +423,7 @@ section[data-testid="stSidebar"] h5 {
     transform: translateY(-1px) !important;
     box-shadow: 0 6px 20px rgba(99, 102, 241, 0.25) !important;
 }
+
 /* MODEL CARDS IN GRID */
 .model-card-container {
     background: #ffffff;
@@ -400,6 +454,7 @@ section[data-testid="stSidebar"] h5 {
 }
 </style>
 """, unsafe_allow_html=True)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # SIDEBAR & WEIGHT LOADING
 # ──────────────────────────────────────────────────────────────────────────────
@@ -407,15 +462,18 @@ with st.sidebar:
     st.markdown("### 🔬 Wafer Inspector")
     st.markdown("Configure your analysis below.")
     st.markdown("---")
+
     models, load_errors = load_models()
     
     # Display elegant warnings inside the sidebar for any models that failed to load
     if load_errors:
         for model_name, err in load_errors.items():
             show_custom_warning(model_name, err)
+
     if not models:
         st.error("No model weights found. Make sure best_cnn.pth, best_vit.pth, or best_hybrid.pth are in the directory.")
         st.stop()
+
     # Multi-model selection
     selected_models = st.multiselect(
         "Select models to compare",
@@ -427,13 +485,16 @@ with st.sidebar:
     if not selected_models:
         st.warning("Please select at least one model!")
         st.stop()
+
     st.markdown(f"<span class='model-pill'>Running on {DEVICE.upper()}</span>", unsafe_allow_html=True)
+
     st.markdown("---")
     st.markdown("##### 📋 Defect Classes")
     with st.expander("View all defect types", expanded=False):
         for name, info in DEFECT_INFO.items():
             st.markdown(f"**{info['emoji']} {name}**")
             st.caption(info['desc'])
+
 # ──────────────────────────────────────────────────────────────────────────────
 # HERO HEADER
 # ──────────────────────────────────────────────────────────────────────────────
@@ -446,14 +507,16 @@ st.markdown("""
     </div>
 </div>
 """, unsafe_allow_html=True)
+
 # ──────────────────────────────────────────────────────────────────────────────
-# MAIN — UPLOAD CARD
+# MAIN — UPLOAD AREA (Using native Streamlit widgets directly without HTML wrappers)
 # ──────────────────────────────────────────────────────────────────────────────
-st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-label">📤 Upload Wafer Map Image</div>', unsafe_allow_html=True)
+st.markdown("### 📤 Upload Wafer Map Image")
 uploaded_file = st.file_uploader("Upload a wafer map image", type=["png", "jpg", "jpeg", "bmp"], label_visibility="collapsed")
 show_bbox = st.checkbox("Show defect bounding-box overlay", value=True)
-st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown("---")
+
 # ──────────────────────────────────────────────────────────────────────────────
 # RESULTS SECTION (only shows when image is uploaded)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -461,19 +524,19 @@ if uploaded_file is not None:
     pil_img = Image.open(io.BytesIO(uploaded_file.read()))
     
     # Show original image
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">📸 Uploaded Image</div>', unsafe_allow_html=True)
+    st.markdown("### 📸 Uploaded Image")
     st.image(pil_img, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("---")
+
     # Run predictions for selected models
     with st.spinner("🔄 Running inference on selected models..."):
         results = {}
         for model_name in selected_models:
             model = models[model_name]
             results[model_name] = predict(model, model_name, pil_img)
+
     # Display results for each model in a grid
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">🎯 Model Predictions</div>', unsafe_allow_html=True)
+    st.markdown("### 🎯 Model Predictions")
     
     cols = st.columns(len(selected_models))
     for col, model_name in enumerate(selected_models):
@@ -491,14 +554,15 @@ if uploaded_file is not None:
             </div>
             """, unsafe_allow_html=True)
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("---")
+
     # Detailed analysis for first selected model
     primary_model = selected_models[0]
     primary_result = results[primary_model]
     primary_info = DEFECT_INFO.get(primary_result["pred_cls"], {"emoji": "❓", "desc": ""})
+
     # Image with bounding box
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">🔍 Detailed Defect Analysis</div>', unsafe_allow_html=True)
+    st.markdown("### 🔍 Detailed Defect Analysis")
     
     disp_img = primary_result["img_resized"].copy()
     if show_bbox and primary_result["bbox"] is not None:
@@ -511,6 +575,7 @@ if uploaded_file is not None:
         disp_img = cv2.cvtColor(disp_img, cv2.COLOR_RGB2BGR)
         cv2.rectangle(disp_img, (x1, y1), (x2, y2), (239, 68, 68), 2) # Clean red overlay
         disp_img = cv2.cvtColor(disp_img, cv2.COLOR_BGR2RGB)
+
     col1, col2 = st.columns([1, 1], gap="large")
     
     with col1:
@@ -519,7 +584,7 @@ if uploaded_file is not None:
     
     with col2:
         st.markdown(f"""
-        <div style="padding: 0.5rem 0;">
+        <div class="glass-card-complete">
             <h3 style="color: #111827; margin-top: 0; font-size: 1.6rem; font-weight: 700;">Primary Defect Classification</h3>
             <div style="margin: 1.2rem 0; display: flex; align-items: center;">
                 <span class="defect-badge" style="font-size: 1.1rem; padding: 0.5rem 1.2rem;">{primary_info['emoji']} {primary_result['pred_cls']}</span>
@@ -532,10 +597,10 @@ if uploaded_file is not None:
         </div>
         """, unsafe_allow_html=True)
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("---")
+
     # Confidence distribution chart
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">📊 Class Confidence Distribution ({})</div>'.format(primary_model), unsafe_allow_html=True)
+    st.markdown("### 📊 Class Confidence Distribution ({})".format(primary_model))
     
     sorted_idx = np.argsort(primary_result["probs"])
     fig = go.Figure(go.Bar(
@@ -559,11 +624,11 @@ if uploaded_file is not None:
         yaxis=dict(showgrid=False),
     )
     st.plotly_chart(fig, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("---")
+
     # All models comparison table
     if len(selected_models) > 1:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="section-label">⚖️ Multi-Model Performance Comparison</div>', unsafe_allow_html=True)
+        st.markdown("### ⚖️ Multi-Model Performance Comparison")
         
         comparison_data = []
         for model_name in selected_models:
@@ -577,10 +642,9 @@ if uploaded_file is not None:
         
         import pandas as pd
         df = pd.DataFrame(comparison_data)
-        
-        # Enforce styling with markdown or simple rendering
         st.dataframe(df, use_container_width=True, hide_index=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("---")
+
 # Footer
 st.markdown(
     "<div style='text-align:center; color:#9ca3af; padding:3rem 0; font-size:0.85rem;'>"
