@@ -3,6 +3,3 @@
 dataset url (pickle file) : https://www.kaggle.com/datasets/qingyi/wm811k-wafer-map/data
 
 UI link : https://silicon-wafer-defect-detection-dl.streamlit.app/
-
-
-https://silicon-wafer-defect-detection-dl.streamlit.app/
