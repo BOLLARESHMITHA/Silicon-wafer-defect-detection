@@ -332,13 +332,13 @@ section[data-testid="stSidebar"] h5 {
     color: #111827 !important;
 }
 
-/* Fix checkboxes & labels to always be dark charcoal (fixes invisible checkbox labels) */
+/* Fix checkboxes & labels to always be dark charcoal */
 div[data-testid="stCheckbox"] label p {
     color: #111827 !important;
     font-weight: 500 !important;
 }
 
-/* Fix File Uploader Styling - override dark background */
+/* Fix File Uploader Styling */
 div[data-testid="stFileUploader"] {
     background-color: #f3f4f6 !important;
     border: 1px dashed #d1d5db !important;
@@ -540,7 +540,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# MAIN — UPLOAD AREA (Using native Streamlit widgets directly without HTML wrappers)
+# MAIN — UPLOAD AREA
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown("### 📤 Upload Wafer Map Image")
 uploaded_file = st.file_uploader("Upload a wafer map image", type=["png", "jpg", "jpeg", "bmp"], label_visibility="collapsed")
@@ -554,9 +554,11 @@ st.markdown("---")
 if uploaded_file is not None:
     pil_img = Image.open(io.BytesIO(uploaded_file.read()))
     
-    # Show original image
+    # Show original image (Centered & Decreased Size)
     st.markdown("### 📸 Uploaded Image")
-    st.image(pil_img, use_container_width=True)
+    img_col1, img_col2, img_col3 = st.columns([1.5, 1, 1.5])
+    with img_col2:
+        st.image(pil_img, use_container_width=True)
     st.markdown("---")
 
     # Run predictions for selected models
@@ -566,17 +568,26 @@ if uploaded_file is not None:
             model = models[model_name]
             results[model_name] = predict(model, model_name, pil_img)
 
-    # Display results for each model in a grid
+    # Initialize Active Model selection in Session State
+    if "active_model" not in st.session_state or st.session_state.active_model not in selected_models:
+        st.session_state.active_model = selected_models[0]
+
+    # Display results for each model in a grid with Selection Buttons
     st.markdown("### 🎯 Model Predictions")
+    st.caption("Click any model's button below to display its detailed defect analysis and confidence charts.")
     
     cols = st.columns(len(selected_models))
     for col, model_name in enumerate(selected_models):
         result = results[model_name]
         info = DEFECT_INFO.get(result["pred_cls"], {"emoji": "❓", "desc": ""})
         
+        # Check if this model card is currently selected
+        is_selected = (st.session_state.active_model == model_name)
+        border_style = "border: 2px solid #6366f1; box-shadow: 0 4px 16px rgba(99, 102, 241, 0.15);" if is_selected else ""
+        
         with cols[col]:
             st.markdown(f"""
-            <div class="model-card-container">
+            <div class="model-card-container" style="{border_style}">
                 <div class="model-card-name">{model_name}</div>
                 <div class="model-card-badge">
                     <span class="defect-badge">{info['emoji']} {result['pred_cls']}</span>
@@ -584,16 +595,22 @@ if uploaded_file is not None:
                 <div class="model-card-conf">{result['confidence']*100:.1f}% confidence</div>
             </div>
             """, unsafe_allow_html=True)
+            
+            # Interactive button to select this prediction
+            button_label = f"✓ Showing {model_name}" if is_selected else f"Show {model_name} Prediction"
+            if st.button(button_label, key=f"select_btn_{model_name}", use_container_width=True):
+                st.session_state.active_model = model_name
+                st.rerun()
     
     st.markdown("---")
 
-    # Detailed analysis for first selected model
-    primary_model = selected_models[0]
+    # Detailed analysis for the active selected model
+    primary_model = st.session_state.active_model
     primary_result = results[primary_model]
     primary_info = DEFECT_INFO.get(primary_result["pred_cls"], {"emoji": "❓", "desc": ""})
 
     # Image with bounding box
-    st.markdown("### 🔍 Detailed Defect Analysis")
+    st.markdown(f"### 🔍 Detailed Defect Analysis ({primary_model})")
     
     disp_img = primary_result["img_resized"].copy()
     if show_bbox and primary_result["bbox"] is not None:
@@ -616,7 +633,7 @@ if uploaded_file is not None:
     with col2:
         st.markdown(f"""
         <div class="glass-card-complete">
-            <h3 style="color: #111827; margin-top: 0; font-size: 1.6rem; font-weight: 700;">Primary Defect Classification</h3>
+            <h3 style="color: #111827; margin-top: 0; font-size: 1.6rem; font-weight: 700;">Primary Defect Classification ({primary_model})</h3>
             <div style="margin: 1.2rem 0; display: flex; align-items: center;">
                 <span class="defect-badge" style="font-size: 1.1rem; padding: 0.5rem 1.2rem;">{primary_info['emoji']} {primary_result['pred_cls']}</span>
                 <span class="conf-pill" style="font-size: 1.1rem; padding: 0.5rem 1.2rem;">{primary_result['confidence']*100:.1f}% confidence</span>
@@ -657,7 +674,7 @@ if uploaded_file is not None:
     st.plotly_chart(fig, use_container_width=True)
     st.markdown("---")
 
-    # All models comparison table
+    # All models comparison table (Dimensions removed)
     if len(selected_models) > 1:
         st.markdown("### ⚖️ Multi-Model Performance Comparison")
         
@@ -667,8 +684,7 @@ if uploaded_file is not None:
             comparison_data.append({
                 "Model Architecture": model_name,
                 "Predicted Defect Class": r["pred_cls"],
-                "Confidence Score": f"{r['confidence']*100:.1f}%",
-                "Model Input Dimension": f"{r['target_size']}×{r['target_size']}"
+                "Confidence Score": f"{r['confidence']*100:.1f}%"
             })
         
         import pandas as pd
