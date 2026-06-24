@@ -2,7 +2,6 @@
 Silicon Wafer Defect Detection — Streamlit App
 Light theme with multi-model comparison and improved UI
 """
-
 import io
 import math
 import numpy as np
@@ -12,7 +11,6 @@ import torch.nn as nn
 import streamlit as st
 from PIL import Image
 import plotly.graph_objects as go
-
 # ──────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ──────────────────────────────────────────────────────────────────────────────
@@ -22,11 +20,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 CLASS_NAMES = ['Center', 'Donut', 'Edge-Loc', 'Edge-Ring',
                'Loc', 'Near-full', 'Random', 'Scratch', 'none']
-
 DEFECT_INFO = {
     "Center":     {"emoji": "🎯", "desc": "Defects clustered around the wafer's center, often linked to centrifugal process steps (e.g. spin-coating, CMP)."},
     "Donut":      {"emoji": "🍩", "desc": "A ring-shaped defect band offset from the very center — frequently tied to uneven etch or deposition profiles."},
@@ -38,7 +34,6 @@ DEFECT_INFO = {
     "Scratch":    {"emoji": "📏", "desc": "A linear defect trail, typically caused by mechanical handling or wafer-to-wafer contact."},
     "none":       {"emoji": "✅", "desc": "No significant defect pattern detected — wafer appears clean."},
 }
-
 # ──────────────────────────────────────────────────────────────────────────────
 # MODEL DEFINITIONS (must match training architectures exactly)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -68,21 +63,15 @@ class WaferCNN(nn.Module):
             nn.Linear(1024, 256), nn.ReLU(), nn.Dropout(0.3),
             nn.Linear(256, num_classes)
         )
-
     def forward(self, x):
         return self.classifier(self.features(x))
-
-
 class PatchEmbed(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_ch=3, embed_dim=192):
         super().__init__()
         self.num_patches = (img_size // patch_size) ** 2
         self.proj = nn.Conv2d(in_ch, embed_dim, kernel_size=patch_size, stride=patch_size)
-
     def forward(self, x):
         return self.proj(x).flatten(2).transpose(1, 2)
-
-
 class ViTAttention(nn.Module):
     def __init__(self, embed_dim=192, num_heads=3, dropout=0.1):
         super().__init__()
@@ -92,15 +81,12 @@ class ViTAttention(nn.Module):
         self.qkv = nn.Linear(embed_dim, embed_dim * 3)
         self.proj = nn.Linear(embed_dim, embed_dim)
         self.dropout = nn.Dropout(dropout)
-
     def forward(self, x):
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
         q, k, v = qkv.unbind(0)
         attn = self.dropout((q @ k.transpose(-2, -1)) * self.scale).softmax(dim=-1)
         return self.proj((attn @ v).transpose(1, 2).reshape(B, N, C))
-
-
 class ViTBlock(nn.Module):
     def __init__(self, embed_dim=192, num_heads=3, mlp_ratio=4.0, dropout=0.1):
         super().__init__()
@@ -111,13 +97,10 @@ class ViTBlock(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(embed_dim, mlp_dim), nn.GELU(), nn.Dropout(dropout),
             nn.Linear(mlp_dim, embed_dim), nn.Dropout(dropout))
-
     def forward(self, x):
         x = x + self.attn(self.norm1(x))
         x = x + self.mlp(self.norm2(x))
         return x
-
-
 class WaferViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_ch=3, embed_dim=192,
                  depth=12, num_heads=3, mlp_ratio=4.0, num_classes=9, dropout=0.1):
@@ -130,7 +113,6 @@ class WaferViT(nn.Module):
         self.blocks = nn.Sequential(*[ViTBlock(embed_dim, num_heads, mlp_ratio, dropout) for _ in range(depth)])
         self.norm = nn.LayerNorm(embed_dim)
         self.head = nn.Linear(embed_dim, num_classes)
-
     def forward(self, x):
         B = x.shape[0]
         x = self.patch_embed(x)
@@ -138,8 +120,6 @@ class WaferViT(nn.Module):
         x = self.pos_drop(torch.cat([cls, x], dim=1) + self.pos_embed)
         x = self.norm(self.blocks(x))
         return self.head(x[:, 0])
-
-
 class HybridCNNTransformer(nn.Module):
     def __init__(self, num_classes=9, img_size=64, d_model=256, nhead=8, num_layers=4, dropout=0.5):
         super().__init__()
@@ -166,7 +146,6 @@ class HybridCNNTransformer(nn.Module):
             nn.Linear(512, 128), nn.GELU(), nn.Dropout(dropout),
             nn.Linear(128, num_classes)
         )
-
     def forward(self, x):
         feat = self.cnn_backbone(x)
         B, C, H, W = feat.shape
@@ -175,41 +154,55 @@ class HybridCNNTransformer(nn.Module):
         feat = self.transformer(feat)
         feat = feat.mean(dim=1)
         return self.head(feat)
-
-
+# ──────────────────────────────────────────────────────────────────────────────
+# STYLISH CUSTOM ERROR/WARNING CARD
+# ──────────────────────────────────────────────────────────────────────────────
+def show_custom_warning(model_name, error_details):
+    st.markdown(f"""
+    <div style="background: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 12px; margin-bottom: 1rem; color: #78350f; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="font-weight: 700; margin-bottom: 0.25rem; font-size: 0.9rem; display: flex; align-items: center;">
+            <span style="margin-right: 0.5rem; font-size: 1.1rem;">⚠️</span> Model Weights Missing
+        </div>
+        <div style="font-size: 0.8rem; color: #b45309; line-height: 1.4;">
+            Could not load <strong>{model_name}</strong> weights. Run the training script or place 
+            <code>best_{model_name.lower()}.pth</code> in the app directory.<br>
+            <span style="font-family: monospace; font-size: 0.75rem; background: rgba(0,0,0,0.03); padding: 2px 4px; border-radius: 4px;">Error: {error_details}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 # ──────────────────────────────────────────────────────────────────────────────
 # MODEL LOADING (cached)
 # ──────────────────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def load_models():
     models = {}
+    load_errors = {}
+    
+    # Try CNN
     try:
         cnn = WaferCNN(9).to(DEVICE)
         cnn.load_state_dict(torch.load("best_cnn.pth", map_location=DEVICE))
         cnn.eval()
         models["CNN"] = cnn
     except Exception as e:
-        st.warning(f"Could not load CNN weights: {e}")
-
+        load_errors["CNN"] = str(e)
+    # Try ViT
     try:
         vit = WaferViT(num_classes=9).to(DEVICE)
         vit.load_state_dict(torch.load("best_vit.pth", map_location=DEVICE))
         vit.eval()
         models["ViT"] = vit
     except Exception as e:
-        st.warning(f"Could not load ViT weights: {e}")
-
+        load_errors["ViT"] = str(e)
+    # Try Hybrid
     try:
         hybrid = HybridCNNTransformer(9).to(DEVICE)
         hybrid.load_state_dict(torch.load("best_hybrid.pth", map_location=DEVICE))
         hybrid.eval()
         models["Hybrid"] = hybrid
     except Exception as e:
-        st.warning(f"Could not load Hybrid weights: {e}")
-
-    return models
-
-
+        load_errors["Hybrid"] = str(e)
+    return models, load_errors
 def get_model_input_size(model):
     if hasattr(model, "patch_embed"):
         num_patches = model.patch_embed.num_patches
@@ -218,8 +211,6 @@ def get_model_input_size(model):
     if hasattr(model, "img_size"):
         return model.img_size
     return 64
-
-
 def get_largest_defect_bbox(raw_wafer):
     arr = np.array(raw_wafer, dtype=np.uint8)
     defect_mask = np.where(arr == 2, 255, 0).astype(np.uint8)
@@ -230,33 +221,25 @@ def get_largest_defect_bbox(raw_wafer):
     x, y, w, h = cv2.boundingRect(largest)
     img_h, img_w = arr.shape
     return [(x + w / 2.0) / img_w, (y + h / 2.0) / img_h, w / img_w, h / img_h]
-
-
 def predict(model, model_name, pil_img):
     img = np.array(pil_img.convert("RGB")).astype(np.float32)
     if img.max() > 1.0:
         img = img / 255.0
-
     target_size = get_model_input_size(model)
     img_resized = cv2.resize((img * 255).astype(np.uint8), (target_size, target_size),
                               interpolation=cv2.INTER_NEAREST)
     img_f = img_resized.astype(np.float32) / 255.0
-
     gray_raw = cv2.cvtColor(img_resized, cv2.COLOR_RGB2GRAY)
     raw_wafer = np.zeros_like(gray_raw, dtype=np.uint8)
     raw_wafer[gray_raw > 30] = 1
     raw_wafer[gray_raw > 180] = 2
-
     tensor = torch.tensor(img_f).permute(2, 0, 1).unsqueeze(0).to(DEVICE).float()
     with torch.no_grad():
         probs = torch.softmax(model(tensor), dim=1).cpu().numpy()[0]
-
     pred_idx = int(np.argmax(probs))
     pred_cls = CLASS_NAMES[pred_idx]
     confidence = float(probs[pred_idx])
-
     bbox = get_largest_defect_bbox(raw_wafer)
-
     return {
         "model_name": model_name,
         "img_resized": img_resized,
@@ -266,197 +249,173 @@ def predict(model, model_name, pil_img):
         "probs": probs,
         "bbox": bbox,
     }
-
-
 # ──────────────────────────────────────────────────────────────────────────────
-# LIGHT THEME STYLES
+# LIGHT THEME STYLES (Cleaned up, scoped, and high contrast)
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
-
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-h1, h2, h3, .hero-title { font-family: 'Space Grotesk', sans-serif; }
-
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+/* Force font family globally */
+html, body, [class*="css"], [data-testid="stMarkdownContainer"] {
+    font-family: 'Inter', sans-serif;
+}
+h1, h2, h3, .hero-title {
+    font-family: 'Space Grotesk', sans-serif;
+}
+/* Base Light Mode Background */
 .stApp {
-    background: linear-gradient(135deg, #f8f9fa 0%, #f0f2f5 100%);
-    color: #1a1a1a;
+    background: #f8f9fa;
+    color: #1f2937;
 }
-
+/* Sidebar Styles - Enforcing clean light theme styling */
 section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #ffffff 0%, #f5f7fa 100%);
-    border-right: 1px solid #e0e4e8;
+    background: #ffffff !important;
+    border-right: 1px solid #e5e7eb !important;
 }
-
-/* HERO */
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] h3,
+section[data-testid="stSidebar"] h5 {
+    color: #1f2937 !important;
+}
+/* HERO CONTAINER */
 .hero {
     padding: 2.2rem 2.4rem;
     border-radius: 20px;
-    background: linear-gradient(120deg, rgba(99, 102, 241, 0.1), rgba(59, 130, 246, 0.1));
-    border: 1px solid rgba(99, 102, 241, 0.3);
-    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.08);
-    margin-bottom: 1.6rem;
+    background: linear-gradient(120deg, rgba(99, 102, 241, 0.08), rgba(59, 130, 246, 0.08));
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    box-shadow: 0 4px 24px rgba(99, 102, 241, 0.04);
+    margin-bottom: 2rem;
 }
 .hero-title {
-    font-size: 2.8rem;
+    font-size: 2.6rem;
     font-weight: 700;
-    color: #1f2937;
+    color: #111827;
     margin: 0;
 }
 .hero-sub {
-    font-size: 1.1rem;
+    font-size: 1.05rem;
     color: #4b5563;
     margin-top: 0.8rem;
     line-height: 1.6;
 }
-
-/* GLASS CARD */
+/* SLEEK GLASS CARD */
 .glass-card {
-    background: rgba(255, 255, 255, 0.9);
-    backdrop-filter: blur(10px);
+    background: #ffffff;
     border: 1px solid #e5e7eb;
     border-radius: 18px;
     padding: 1.8rem;
-    box-shadow: 0 2px 15px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
     margin-bottom: 1.5rem;
+    color: #1f2937;
 }
-
 .section-label {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 700;
     color: #6366f1;
     text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 1rem;
+    letter-spacing: 1.5px;
+    margin-bottom: 1.2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
-
-/* BADGES */
+/* DEFECT BADGES & PILLS */
 .defect-badge {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(59, 130, 246, 0.2));
-    border: 1.5px solid #6366f1;
-    color: #1f2937;
-    padding: 0.5rem 1.2rem;
-    border-radius: 24px;
-    font-weight: 600;
-    display: inline-block;
-    font-size: 0.95rem;
-}
-
-.conf-pill {
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(16, 185, 129, 0.15));
-    border: 1.5px solid #22c55e;
-    color: #15803d;
-    padding: 0.5rem 1.2rem;
-    border-radius: 24px;
-    font-weight: 600;
-    display: inline-block;
-    margin-left: 0.8rem;
-    font-size: 0.95rem;
-}
-
-.model-pill {
-    background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(234, 179, 8, 0.15));
-    border: 1px solid #f97316;
-    color: #92400e;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(59, 130, 246, 0.1));
+    border: 1px solid #6366f1;
+    color: #312e81;
     padding: 0.4rem 1rem;
+    border-radius: 24px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.95rem;
+    gap: 0.4rem;
+}
+.conf-pill {
+    background: #ecfdf5;
+    border: 1px solid #10b981;
+    color: #047857;
+    padding: 0.4rem 1rem;
+    border-radius: 24px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.5rem;
+    font-size: 0.95rem;
+}
+.model-pill {
+    background: #fff7ed;
+    border: 1px solid #f97316;
+    color: #c2410c;
+    padding: 0.4rem 0.8rem;
     border-radius: 20px;
     font-size: 0.8rem;
     font-weight: 600;
     display: inline-block;
 }
-
-/* QA BLOCK */
-.qa-block {
-    background: rgba(249, 250, 251, 0.7);
-    border-left: 4px solid #6366f1;
-    padding: 1.2rem;
-    border-radius: 8px;
-    margin-top: 1rem;
-}
-.qa-question {
-    font-weight: 600;
-    color: #1f2937;
-    margin-bottom: 0.8rem;
-}
-.qa-answer {
-    color: #4b5563;
-    line-height: 1.6;
-}
-
-/* STREAMLIT OVERRIDES */
-[data-testid="stCheckbox"] { color: #1a1a1a; }
-[data-testid="stSelectbox"] { color: #1a1a1a; }
-[data-testid="stMultiSelect"] { color: #1a1a1a; }
-
+/* STREAMLIT FORM OVERRIDES & BUTTONS */
 .stButton>button {
-    background: linear-gradient(135deg, #6366f1 0%, #3b82f6 100%);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    font-weight: 600;
-    transition: all 0.3s ease;
+    background: linear-gradient(135deg, #6366f1 0%, #3b82f6 100%) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 12px !important;
+    font-weight: 600 !important;
+    padding: 0.6rem 1.8rem !important;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15) !important;
+    transition: all 0.2s ease !important;
 }
 .stButton>button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+    transform: translateY(-1px) !important;
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.25) !important;
 }
-
-/* MODEL COMPARISON GRID */
-.model-comparison {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1.5rem;
-    margin-top: 1.5rem;
-}
-
-.model-card {
-    background: white;
-    border: 1.5px solid #e5e7eb;
-    border-radius: 14px;
+/* MODEL CARDS IN GRID */
+.model-card-container {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
     padding: 1.5rem;
     text-align: center;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
-    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+    transition: all 0.2s ease;
 }
-
-.model-card:hover {
+.model-card-container:hover {
     border-color: #6366f1;
-    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
-    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.08);
 }
-
-.model-name {
+.model-card-name {
+    font-size: 1.1rem;
     font-weight: 700;
     color: #1f2937;
-    margin-bottom: 0.8rem;
-    font-size: 1.1rem;
+    margin-bottom: 0.75rem;
 }
-
-.model-prediction {
-    margin: 0.8rem 0;
+.model-card-badge {
+    margin: 0.75rem 0;
 }
-
-.model-confidence {
-    font-size: 0.9rem;
+.model-card-conf {
+    font-size: 0.875rem;
+    font-weight: 500;
     color: #6b7280;
-    margin-top: 0.8rem;
 }
 </style>
 """, unsafe_allow_html=True)
-
 # ──────────────────────────────────────────────────────────────────────────────
-# SIDEBAR
+# SIDEBAR & WEIGHT LOADING
 # ──────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 🔬 Wafer Inspector")
     st.markdown("Configure your analysis below.")
     st.markdown("---")
-
-    models = load_models()
+    models, load_errors = load_models()
+    
+    # Display elegant warnings inside the sidebar for any models that failed to load
+    if load_errors:
+        for model_name, err in load_errors.items():
+            show_custom_warning(model_name, err)
     if not models:
-        st.error("No model weights found. Make sure best_cnn.pth, best_vit.pth, and best_hybrid.pth are in the app directory.")
+        st.error("No model weights found. Make sure best_cnn.pth, best_vit.pth, or best_hybrid.pth are in the directory.")
         st.stop()
-
     # Multi-model selection
     selected_models = st.multiselect(
         "Select models to compare",
@@ -468,18 +427,15 @@ with st.sidebar:
     if not selected_models:
         st.warning("Please select at least one model!")
         st.stop()
-
     st.markdown(f"<span class='model-pill'>Running on {DEVICE.upper()}</span>", unsafe_allow_html=True)
-
     st.markdown("---")
     st.markdown("##### 📋 Defect Classes")
     with st.expander("View all defect types", expanded=False):
         for name, info in DEFECT_INFO.items():
             st.markdown(f"**{info['emoji']} {name}**")
             st.caption(info['desc'])
-
 # ──────────────────────────────────────────────────────────────────────────────
-# HERO
+# HERO HEADER
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="hero">
@@ -490,16 +446,14 @@ st.markdown("""
     </div>
 </div>
 """, unsafe_allow_html=True)
-
 # ──────────────────────────────────────────────────────────────────────────────
-# MAIN — UPLOAD
+# MAIN — UPLOAD CARD
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-label">📤 Input</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-label">📤 Upload Wafer Map Image</div>', unsafe_allow_html=True)
 uploaded_file = st.file_uploader("Upload a wafer map image", type=["png", "jpg", "jpeg", "bmp"], label_visibility="collapsed")
 show_bbox = st.checkbox("Show defect bounding-box overlay", value=True)
 st.markdown('</div>', unsafe_allow_html=True)
-
 # ──────────────────────────────────────────────────────────────────────────────
 # RESULTS SECTION (only shows when image is uploaded)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -511,17 +465,15 @@ if uploaded_file is not None:
     st.markdown('<div class="section-label">📸 Uploaded Image</div>', unsafe_allow_html=True)
     st.image(pil_img, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
-
     # Run predictions for selected models
     with st.spinner("🔄 Running inference on selected models..."):
         results = {}
         for model_name in selected_models:
             model = models[model_name]
             results[model_name] = predict(model, model_name, pil_img)
-
     # Display results for each model in a grid
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">🎯 Predictions</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-label">🎯 Model Predictions</div>', unsafe_allow_html=True)
     
     cols = st.columns(len(selected_models))
     for col, model_name in enumerate(selected_models):
@@ -530,25 +482,23 @@ if uploaded_file is not None:
         
         with cols[col]:
             st.markdown(f"""
-            <div style="text-align: center; padding: 1rem;">
-                <div class="model-name">{model_name}</div>
-                <div class="model-prediction">
-                    <span class="defect-badge" style="font-size:0.9rem;">{info['emoji']} {result['pred_cls']}</span>
+            <div class="model-card-container">
+                <div class="model-card-name">{model_name}</div>
+                <div class="model-card-badge">
+                    <span class="defect-badge">{info['emoji']} {result['pred_cls']}</span>
                 </div>
-                <div class="model-confidence">{result['confidence']*100:.1f}% confidence</div>
+                <div class="model-card-conf">{result['confidence']*100:.1f}% confidence</div>
             </div>
             """, unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
-
     # Detailed analysis for first selected model
     primary_model = selected_models[0]
     primary_result = results[primary_model]
     primary_info = DEFECT_INFO.get(primary_result["pred_cls"], {"emoji": "❓", "desc": ""})
-
     # Image with bounding box
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">🔍 Detailed Analysis</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-label">🔍 Detailed Defect Analysis</div>', unsafe_allow_html=True)
     
     disp_img = primary_result["img_resized"].copy()
     if show_bbox and primary_result["bbox"] is not None:
@@ -559,9 +509,8 @@ if uploaded_file is not None:
         x2 = int((xc + bw / 2) * w)
         y2 = int((yc + bh / 2) * h)
         disp_img = cv2.cvtColor(disp_img, cv2.COLOR_RGB2BGR)
-        cv2.rectangle(disp_img, (x1, y1), (x2, y2), (0, 150, 255), 3)
+        cv2.rectangle(disp_img, (x1, y1), (x2, y2), (239, 68, 68), 2) # Clean red overlay
         disp_img = cv2.cvtColor(disp_img, cv2.COLOR_BGR2RGB)
-
     col1, col2 = st.columns([1, 1], gap="large")
     
     with col1:
@@ -570,23 +519,23 @@ if uploaded_file is not None:
     
     with col2:
         st.markdown(f"""
-        <div style="padding: 1.5rem 0;">
-            <h3 style="color: #1f2937; margin-top: 0;">Primary Defect</h3>
-            <div style="margin: 1rem 0;">
-                <span class="defect-badge">{primary_info['emoji']} {primary_result['pred_cls']}</span>
-                <span class="conf-pill">{primary_result['confidence']*100:.1f}%</span>
+        <div style="padding: 0.5rem 0;">
+            <h3 style="color: #111827; margin-top: 0; font-size: 1.6rem; font-weight: 700;">Primary Defect Classification</h3>
+            <div style="margin: 1.2rem 0; display: flex; align-items: center;">
+                <span class="defect-badge" style="font-size: 1.1rem; padding: 0.5rem 1.2rem;">{primary_info['emoji']} {primary_result['pred_cls']}</span>
+                <span class="conf-pill" style="font-size: 1.1rem; padding: 0.5rem 1.2rem;">{primary_result['confidence']*100:.1f}% confidence</span>
             </div>
-            <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(99, 102, 241, 0.05); border-radius: 10px; border-left: 3px solid #6366f1;">
-                <p style="margin: 0; color: #4b5563; line-height: 1.6;">{primary_info['desc']}</p>
+            <div style="margin-top: 1.5rem; padding: 1.2rem; background: #f9fafb; border-radius: 12px; border-left: 4px solid #6366f1;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #111827; font-size: 0.95rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Defect Analysis & Source</h4>
+                <p style="margin: 0; color: #4b5563; line-height: 1.6; font-size: 0.95rem;">{primary_info['desc']}</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
-
     # Confidence distribution chart
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">📊 Class Confidence Distribution</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-label">📊 Class Confidence Distribution ({})</div>'.format(primary_model), unsafe_allow_html=True)
     
     sorted_idx = np.argsort(primary_result["probs"])
     fig = go.Figure(go.Bar(
@@ -601,43 +550,42 @@ if uploaded_file is not None:
         textposition="outside",
     ))
     fig.update_layout(
-        height=340,
-        margin=dict(l=10, r=30, t=10, b=10),
+        height=380,
+        margin=dict(l=10, r=40, t=10, b=10),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#4b5563", size=12),
-        xaxis=dict(range=[0, 1], showgrid=True, gridcolor="#e5e7eb", tickformat=".0%"),
+        xaxis=dict(range=[0, 1.15], showgrid=True, gridcolor="#e5e7eb", tickformat=".0%"),
         yaxis=dict(showgrid=False),
     )
     st.plotly_chart(fig, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
-
     # All models comparison table
     if len(selected_models) > 1:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="section-label">⚖️ Model Comparison</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">⚖️ Multi-Model Performance Comparison</div>', unsafe_allow_html=True)
         
         comparison_data = []
         for model_name in selected_models:
             r = results[model_name]
             comparison_data.append({
-                "Model": model_name,
-                "Prediction": r["pred_cls"],
-                "Confidence": f"{r['confidence']*100:.1f}%",
-                "Input Size": f"{r['target_size']}×{r['target_size']}"
+                "Model Architecture": model_name,
+                "Predicted Defect Class": r["pred_cls"],
+                "Confidence Score": f"{r['confidence']*100:.1f}%",
+                "Model Input Dimension": f"{r['target_size']}×{r['target_size']}"
             })
         
         import pandas as pd
         df = pd.DataFrame(comparison_data)
         
+        # Enforce styling with markdown or simple rendering
         st.dataframe(df, use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
-
 # Footer
 st.markdown(
-    "<div style='text-align:center; color:#9ca3af; padding:2rem 0; font-size:0.85rem;'>"
+    "<div style='text-align:center; color:#9ca3af; padding:3rem 0; font-size:0.85rem;'>"
     "🔬 Silicon Wafer Defect Detection · Multi-Model AI Analysis<br>"
-    "CNN | Vision Transformer | Hybrid CNN-Transformer"
+    "CNN | Vision Transformer (ViT) | Hybrid CNN-Transformer"
     "</div>",
     unsafe_allow_html=True,
 )
