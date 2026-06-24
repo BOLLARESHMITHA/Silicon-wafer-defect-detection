@@ -548,7 +548,7 @@ if uploaded_file is not None:
 
     # Image with bounding box
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">🔍 Detailed Analysis</div>', unsafe_have_html=True)
+    st.markdown('<div class="section-label">🔍 Detailed Analysis</div>', unsafe_allow_html=True)
     
     disp_img = primary_result["img_resized"].copy()
     if show_bbox and primary_result["bbox"] is not None:
@@ -586,7 +586,7 @@ if uploaded_file is not None:
 
     # Confidence distribution chart
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">📊 Class Confidence Distribution</div>', unsafe_have_html=True)
+    st.markdown('<div class="section-label">📊 Class Confidence Distribution</div>', unsafe_allow_html=True)
     
     sorted_idx = np.argsort(primary_result["probs"])
     fig = go.Figure(go.Bar(
@@ -614,8 +614,8 @@ if uploaded_file is not None:
 
     # All models comparison table
     if len(selected_models) > 1:
-        st.markdown('<div class="glass-card">', unsafe_have_html=True)
-        st.markdown('<div class="section-label">⚖️ Model Comparison</div>', unsafe_have_html=True)
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">⚖️ Model Comparison</div>', unsafe_allow_html=True)
         
         comparison_data = []
         for model_name in selected_models:
@@ -631,7 +631,7 @@ if uploaded_file is not None:
         df = pd.DataFrame(comparison_data)
         
         st.dataframe(df, use_container_width=True, hide_index=True)
-        st.markdown('</div>', unsafe_have_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # Footer
 st.markdown(
